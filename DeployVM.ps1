@@ -3,7 +3,7 @@
 <?xml version="1.0" encoding ="utf-16"?>
 <Window 
 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" 
-Name="VMDeploy" Title="VM Deploy" Height="452" Width="464" WindowStartupLocation="CenterScreen" Background="#FFDFE084" IsHitTestVisible="False" WindowStyle="None" ResizeMode="NoResize">
+Name="VMDeploy" Title="VM Deploy" Height="452" Width="464" WindowStartupLocation="CenterScreen" Background="#FFDFE084" WindowStyle="None" ResizeMode="NoResize">
 <Grid Background="#FFB5B188" Width="464" Margin="0,0,0,1">
         <GroupBox Name="gbServer" Height="287" Margin="6,112,5,0" VerticalAlignment="Top" Header=" VM Caracteristics"/>
         <TextBlock Name="lblVMfolder" HorizontalAlignment="Left" Margin="26,165,0,0" TextWrapping="Wrap" Text="Folder >>" VerticalAlignment="Top" FontFamily="Consolas" Width="60" Height="16"/>
@@ -35,7 +35,6 @@ Name="VMDeploy" Title="VM Deploy" Height="452" Width="464" WindowStartupLocation
         <Rectangle HorizontalAlignment="Center" Height="94" Stroke="Black" VerticalAlignment="Top" Width="452" Margin="0,4,0,0"/>
         <Label Content="Deploy VMware VM" HorizontalAlignment="Left" Margin="147,26,0,0" VerticalAlignment="Top" FontFamily="Britannic Bold" FontSize="36" Width="303" FontWeight="Bold"/>
         <Image HorizontalAlignment="Left" Height="77" Margin="15,12,0,0" VerticalAlignment="Top" Width="87"/>
-
     </Grid>
 </Window>
 '@
@@ -43,16 +42,12 @@ Name="VMDeploy" Title="VM Deploy" Height="452" Width="464" WindowStartupLocation
 
 $myReader = (New-Object System.Xml.XmlNodeReader $xaml)
 $myForm = [Windows.Markup.XamlReader]::Load($myReader)
-
+$myForm.FindName("btnClose").add_click({
+    $myForm.Close()
+})
 # test to fill the ComboBox 
 Get-Service | ForEach-Object {
                               $myForm.FindName("tblDatastore").items.Add($_.Name)
                               $myForm.FindName("tblDatastore").SelectedIndex = 0
                              }
-                             
-$myForm.FindName("btnClose").add_click({
-    $myForm.Close()
-})
-
-
 $myForm.ShowDialog() 
