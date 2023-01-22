@@ -7,12 +7,12 @@ Name="VMDeploy" Title="VM Deploy" Height="452" Width="464" WindowStartupLocation
 <Grid Background="#FFB5B188" Width="464" Margin="0,0,0,1">
         <GroupBox Name="gbServer" Height="287" Margin="6,112,5,0" VerticalAlignment="Top" Header=" VM Caracteristics"/>
         <TextBlock Name="lblVMfolder" HorizontalAlignment="Left" Margin="26,165,0,0" TextWrapping="Wrap" Text="Folder >>" VerticalAlignment="Top" FontFamily="Consolas" Width="60" Height="16"/>
+        <ComboBox Name="tbVMfolder" Width="344" Height="22" Margin="92,161,0,0" HorizontalAlignment="Left" Grid.Column="0" Grid.Row="0" VerticalAlignment="Top" FontFamily="Consolas" />
         <TextBlock Name="lblVMName" HorizontalAlignment="Left" Margin="26,135,0,0" TextWrapping="Wrap" Text="Name &gt;&gt;" VerticalAlignment="Top" FontFamily="Consolas" Width="60" Height="16"/>
         <TextBlock Name="lblCPU" HorizontalAlignment="Left" Margin="88,313,0,0" TextWrapping="Wrap" Text="# of CPUs >>" VerticalAlignment="Top" Height="16" Width="80" FontFamily="Consolas"/>
         <TextBlock Name="lblDisk1" HorizontalAlignment="Left" Margin="38,266,0,0" TextWrapping="Wrap" Text="Disk 1 >>" VerticalAlignment="Top" Width="60" Height="16" FontFamily="Consolas"/>
         <TextBlock Name="lblCore" HorizontalAlignment="Left" Margin="246,313,0,0" TextWrapping="Wrap" Text="# of Cores >>" VerticalAlignment="Top" Width="86" Height="16" FontFamily="Consolas"/>
         <TextBlock Name="lblDisk2" HorizontalAlignment="Left" Margin="244,266,0,0" TextWrapping="Wrap" Text="Disk 2 >>" VerticalAlignment="Top" Width="60" Height="16" FontFamily="Consolas"/>
-        <ComboBox Name="tbVMOSBo" Width="344" Height="22" Margin="92,161,0,0" HorizontalAlignment="Left" Grid.Column="0" Grid.Row="0" VerticalAlignment="Top" FontFamily="Consolas" />
         <TextBlock Name="lblOS" Margin="26,196,0,0" TextWrapping="Wrap" Text="Operation System >>" VerticalAlignment="Top" FontFamily="Consolas" Width="126" Height="16" HorizontalAlignment="Left"/>
         <ComboBox Name="tblOS" Width="282" Height="22" Margin="154,192,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" Grid.Column="0" Grid.Row="0" FontFamily="Consolas" />
         <TextBlock Name="lblOSVersion" Margin="26,229,0,0" TextWrapping="Wrap" Text="Virsion / Distribution >>" VerticalAlignment="Top" FontFamily="Consolas" Width="166" Height="16" HorizontalAlignment="Left"/>
@@ -38,16 +38,27 @@ Name="VMDeploy" Title="VM Deploy" Height="452" Width="464" WindowStartupLocation
     </Grid>
 </Window>
 '@
-
+$windowsList = @("Windows 10", "Windows 11", "Windows 2016", "Windows 2019". "Windows 2022")
+$linuxList = @("Ubuntu 20", "Ubuntu 21", "Ubuntu 22", "Debian 10", "Debian 11", "Debian 12", "Debian 15", "Suse 15", "OpenSuse Leap 42", , "OpenSuse Leap 15", "Red Hat 7", "Red Hat 8", "Cent OS 7", "Cent OS 8")
 
 $myReader = (New-Object System.Xml.XmlNodeReader $xaml)
 $myForm = [Windows.Markup.XamlReader]::Load($myReader)
 $myForm.FindName("btnClose").add_click({
     $myForm.Close()
 })
+
 # test to fill the ComboBox 
-Get-Service | ForEach-Object {
+Get-Template | Select-Object -Property * | Where-Object {$_.Name -like 'Windows*'} | ForEach-Object {
                               $myForm.FindName("tblDatastore").items.Add($_.Name)
                               $myForm.FindName("tblDatastore").SelectedIndex = 0
+                             }
+Get-VMHost  | Where-Object { $_.ConnectionState -eq 'Connected'} | ForEach-Object {
+                              $myForm.FindName("tblHost").items.Add($_.Name)
+                              $myForm.FindName("tblHost").SelectedIndex = 0
+                             }
+
+Get-Folder | ? {$_.Type -like "VM" -and -not ($_.name -in ("vm", "vCLs")) } | ForEach-Object {
+                              $myForm.FindName("tbVMfolder").items.Add($_.Name)
+                              $myForm.FindName("tbVMfolder").SelectedIndex = 0
                              }
 $myForm.ShowDialog() 
