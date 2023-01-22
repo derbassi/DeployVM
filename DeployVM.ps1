@@ -55,11 +55,22 @@ $myForm.FindName("btnClose").add_click({
     $myForm.Close()
 })
 
-#Test to fill the ComboBox 
+#Fill the ComboBoxes
+#List of Folders
+Get-Folder | Where-Object {$_.Type -like "VM" -and -not ($_.name -in ("vm", "vCLs")) } | ForEach-Object {
+    $tbVMfolder.items.Add($_.Name)
+    $tbVMfolder.SelectedIndex = 1
+    }
 # List of Templates
 Get-Template | ForEach-Object {
     $tblDatastore.items.Add($_.Name)
     $tblDatastore.SelectedIndex = 0
+    }
+
+#List of Datastores
+Get-DataStore | ForEach-Object {
+    $tblDatastore.items.Add($_.Name)
+    $tblDatastore.SelectedIndex = 1
     }
 
 #List of Hosts
@@ -70,9 +81,4 @@ $HostName | ForEach-Object {
     $tblHost.SelectedIndex = 0
     }
 
-#List of Folders
-Get-Folder | Where-Object {$_.Type -like "VM" -and -not ($_.name -in ("vm", "vCLs")) } | ForEach-Object {
-    $tbVMfolder.items.Add($_.Name)
-    $tbVMfolder.SelectedIndex = 1
-    }
 $myForm.ShowDialog()   
