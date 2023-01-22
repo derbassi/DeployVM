@@ -1,10 +1,21 @@
-﻿Add-Type -AssemblyName presentationframework
+﻿Add-Type -AssemblyName PresentationFramework, System.Drawing, System.Windows.Forms, WindowsFormsIntegration
+
+#region Variables
+$iconePath="Path to my iconeFile"
+$windowsList = @("Windows 10", "Windows 11", "Windows 2016", "Windows 2019". "Windows 2022")
+$linuxList = @("Ubuntu 20", "Ubuntu 21", "Ubuntu 22", "Debian 10", "Debian 11", "Debian 12", "Debian 15", "Suse 15", "OpenSuse Leap 42", , "OpenSuse Leap 15", "Red Hat 7", "Red Hat 8", "Cent OS 7", "Cent OS 8")
+#endregion Variables
+
+#region XAML
 [xml]$xaml=@'
 <?xml version="1.0" encoding ="utf-16"?>
 <Window 
 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" 
 Name="VMDeploy" Title="VM Deploy" Height="452" Width="464" WindowStartupLocation="CenterScreen" Background="#FFDFE084" WindowStyle="None" ResizeMode="NoResize">
 <Grid Background="#FFB5B188" Width="464" Margin="0,0,0,1">
+        <Rectangle HorizontalAlignment="Center" Height="94" Stroke="Black" VerticalAlignment="Top" Width="452" Margin="0,4,0,0"/>
+        <Label Content="Deploy VMware VM" HorizontalAlignment="Left" Margin="100,26,0,0" VerticalAlignment="Top" FontFamily="Britannic Bold" FontSize="36" Width="350" FontWeight="Bold"/>
+        <Image HorizontalAlignment="Left" Height="77" Margin="15,12,0,0" VerticalAlignment="Top" Width="87"/>
         <GroupBox Name="gbServer" Height="287" Margin="6,112,5,0" VerticalAlignment="Top" Header=" VM Caracteristics"/>
         <TextBlock Name="lblVMfolder" HorizontalAlignment="Left" Margin="26,165,0,0" TextWrapping="Wrap" Text="Folder >>" VerticalAlignment="Top" FontFamily="Consolas" Width="60" Height="16"/>
         <ComboBox Name="tbVMfolder" Width="344" Height="22" Margin="92,161,0,0" HorizontalAlignment="Left" Grid.Column="0" Grid.Row="0" VerticalAlignment="Top" FontFamily="Consolas" />
@@ -32,33 +43,36 @@ Name="VMDeploy" Title="VM Deploy" Height="452" Width="464" WindowStartupLocation
         <ComboBox Name="tblHost" Width="136" Height="22" Margin="304,355,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" Grid.Column="0" Grid.Row="0" FontFamily="Consolas" />
         <Button Name="btnClose" HorizontalAlignment="Left" Margin="390,412,0,0" VerticalAlignment="Top" Width="68" Height="26" FontFamily="Consolas" Content="Close"/>
         <ComboBox Name="tblOSVersion" Height="22" Margin="198,226,28,0" VerticalAlignment="Top" Grid.Column="0" Grid.Row="0" FontFamily="Consolas" Width="238" />
-        <Rectangle HorizontalAlignment="Center" Height="94" Stroke="Black" VerticalAlignment="Top" Width="452" Margin="0,4,0,0"/>
-        <Label Content="Deploy VMware VM" HorizontalAlignment="Left" Margin="147,26,0,0" VerticalAlignment="Top" FontFamily="Britannic Bold" FontSize="36" Width="303" FontWeight="Bold"/>
-        <Image HorizontalAlignment="Left" Height="77" Margin="15,12,0,0" VerticalAlignment="Top" Width="87"/>
     </Grid>
 </Window>
 '@
-$windowsList = @("Windows 10", "Windows 11", "Windows 2016", "Windows 2019". "Windows 2022")
-$linuxList = @("Ubuntu 20", "Ubuntu 21", "Ubuntu 22", "Debian 10", "Debian 11", "Debian 12", "Debian 15", "Suse 15", "OpenSuse Leap 42", , "OpenSuse Leap 15", "Red Hat 7", "Red Hat 8", "Cent OS 7", "Cent OS 8")
-
 $myReader = (New-Object System.Xml.XmlNodeReader $xaml)
 $myForm = [Windows.Markup.XamlReader]::Load($myReader)
+$xaml.SelectNodes("//*[@Name]") | ForEach-Object {Set-Variable -Name ($_.Name) -Value $myForm.FindName($_.Name)}
+#endregion
+
 $myForm.FindName("btnClose").add_click({
     $myForm.Close()
 })
 
-# test to fill the ComboBox 
+#Test to fill the ComboBox 
+# List of Templates
 Get-Template | Select-Object -Property * | Where-Object {$_.Name -like 'Windows*'} | ForEach-Object {
-                              $myForm.FindName("tblDatastore").items.Add($_.Name)
-                              $myForm.FindName("tblDatastore").SelectedIndex = 0
-                             }
-Get-VMHost  | Where-Object { $_.ConnectionState -eq 'Connected'} | ForEach-Object {
-                              $myForm.FindName("tblHost").items.Add($_.Name)
-                              $myForm.FindName("tblHost").SelectedIndex = 0
-                             }
+    $tblDatastore.items.Add($_.Name)
+    $tblDatastore.SelectedIndex = 0
+    }
 
-Get-Folder | ? {$_.Type -like "VM" -and -not ($_.name -in ("vm", "vCLs")) } | ForEach-Object {
-                              $myForm.FindName("tbVMfolder").items.Add($_.Name)
-                              $myForm.FindName("tbVMfolder").SelectedIndex = 0
-                             }
-$myForm.ShowDialog() 
+#List of Hosts
+$HostName = Get-VMHost  | Where-Object { $_.ConnectionState -eq 'Connected'} | Select-Object Name
+$HostName  | ForEach-Object {
+    # Name of the ESXi without FQDN
+    $tblHost.items.Add($_.Name.split(".")[0])
+    $tblHost.SelectedIndex = 0
+    }
+
+#List of Folders
+Get-Folder | Where-Object {$_.Type -like "VM" -and -not ($_.name -in ("vm", "vCLs")) } | ForEach-Object {
+    $tbVMfolder.items.Add($_.Name)
+    $tbVMfolder.SelectedIndex = 1
+    }
+$myForm.ShowDialog()   
