@@ -1,7 +1,7 @@
 ﻿Add-Type -AssemblyName PresentationFramework, System.Drawing, System.Windows.Forms, WindowsFormsIntegration
 
 #region Variables
-$iconePath="Path to my iconeFile"
+$iconPath="Path to my iconeFile"
 $windowsList = @("Windows 10", "Windows 11", "Windows 2016", "Windows 2019". "Windows 2022")
 $linuxList = @("Ubuntu 20", "Ubuntu 21", "Ubuntu 22", "Debian 10", "Debian 11", "Debian 12", "Debian 15", "Suse 15", "OpenSuse Leap 42", , "OpenSuse Leap 15", "Red Hat 7", "Red Hat 8", "Cent OS 7", "Cent OS 8")
 #endregion Variables
@@ -57,14 +57,14 @@ $myForm.FindName("btnClose").add_click({
 
 #Test to fill the ComboBox 
 # List of Templates
-Get-Template | Select-Object -Property * | Where-Object {$_.Name -like 'Windows*'} | ForEach-Object {
+Get-Template | ForEach-Object {
     $tblDatastore.items.Add($_.Name)
     $tblDatastore.SelectedIndex = 0
     }
 
 #List of Hosts
-$HostName = Get-VMHost  | Where-Object { $_.ConnectionState -eq 'Connected'} | Select-Object Name
-$HostName  | ForEach-Object {
+$HostName = Get-VMHost | Where-Object { $_.ConnectionState -eq 'Connected'} | Select-Object Name
+$HostName | ForEach-Object {
     # Name of the ESXi without FQDN
     $tblHost.items.Add($_.Name.split(".")[0])
     $tblHost.SelectedIndex = 0
