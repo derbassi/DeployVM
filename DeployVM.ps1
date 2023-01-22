@@ -14,8 +14,8 @@ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
 Name="VMDeploy" Title="VM Deploy" Height="452" Width="464" WindowStartupLocation="CenterScreen" Background="#FFDFE084" WindowStyle="None" ResizeMode="NoResize">
 <Grid Background="#FFB5B188" Width="464" Margin="0,0,0,1">
         <Rectangle HorizontalAlignment="Center" Height="94" Stroke="Black" VerticalAlignment="Top" Width="452" Margin="0,4,0,0"/>
-        <Label Content="Deploy VMware VM" HorizontalAlignment="Left" Margin="105,26,0,0" VerticalAlignment="Top" FontFamily="Britannic Bold" FontSize="36" Width="350" FontWeight="Bold"/>
-        <Image Height="77" Width="87" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,12,0,0" Source=$iconPath Stretch="Fill"/>
+        <Label Content="Deploy VMware VM" HorizontalAlignment="Left" Margin="100,26,0,0" VerticalAlignment="Top" FontFamily="Britannic Bold" FontSize="36" Width="350" FontWeight="Bold"/>
+        <Image Height="77" Width="87" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,12,0,0" Source="C:\Ps\DeployVM.png" Stretch="Fill"/>
         <GroupBox Name="gbServer" Height="287" Margin="6,112,5,0" VerticalAlignment="Top" Header=" VM Caracteristics"/>
         <TextBlock Name="lblVMfolder" HorizontalAlignment="Left" Margin="26,165,0,0" TextWrapping="Wrap" Text="Folder >>" VerticalAlignment="Top" FontFamily="Consolas" Width="60" Height="16"/>
         <ComboBox Name="tbVMfolder" Width="344" Height="22" Margin="92,161,0,0" HorizontalAlignment="Left" Grid.Column="0" Grid.Row="0" VerticalAlignment="Top" FontFamily="Consolas" />
@@ -57,14 +57,15 @@ $myForm.FindName("btnClose").add_click({
 
 #Fill the ComboBoxes
 #List of Folders
-Get-Folder | Where-Object {$_.Type -like "VM" -and -not ($_.name -in ("vm", "vCLs")) } | ForEach-Object {
+Get-Folder | ? {$_.Type -like "VM" -and -not ($_.name -in ("vm", "vCLs")) } | ForEach-Object {
     $tbVMfolder.items.Add($_.Name)
     $tbVMfolder.SelectedIndex = 1
     } | Out-Null
+
 # List of Templates
 Get-Template | ForEach-Object {
-    $tblDatastore.items.Add($_.Name)
-    $tblDatastore.SelectedIndex = 0
+    $tblOS.items.Add($_.Name)
+    $tblOS.SelectedIndex = 0
     } | Out-Null
 
 #List of Datastores
@@ -74,9 +75,8 @@ Get-DataStore | ForEach-Object {
     } | Out-Null
 
 #List of Hosts
-$HostName = Get-VMHost | Where-Object { $_.ConnectionState -eq 'Connected'} | Select-Object Name
-$HostName | ForEach-Object {
-    # Name of the ESXi without FQDN
+$HostName = Get-VMHost  | Where-Object { $_.ConnectionState -eq 'Connected'} | Select-Object Name
+$HostName  | ForEach-Object {
     $tblHost.items.Add($_.Name.split(".")[0])
     $tblHost.SelectedIndex = 0
     } | Out-Null
