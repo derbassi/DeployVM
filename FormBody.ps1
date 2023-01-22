@@ -19,7 +19,7 @@ Name="VMDeploy" Title="VM Deploy" Height="452" Width="464" WindowStartupLocation
         <TextBlock Name="lblDisk1" HorizontalAlignment="Left" Margin="38,266,0,0" TextWrapping="Wrap" Text="Disk 1 >>" VerticalAlignment="Top" Width="60" Height="16" FontFamily="Consolas"/>
         <TextBlock Name="lblCore" HorizontalAlignment="Left" Margin="246,313,0,0" TextWrapping="Wrap" Text="# of Cores >>" VerticalAlignment="Top" Width="86" Height="16" FontFamily="Consolas"/>
         <TextBlock Name="lblDisk2" HorizontalAlignment="Left" Margin="244,266,0,0" TextWrapping="Wrap" Text="Disk 2 >>" VerticalAlignment="Top" Width="60" Height="16" FontFamily="Consolas"/>
-        <TextBlock Name="lblOS" Margin="26,196,0,0" TextWrapping="Wrap" Text="Operation System >>" VerticalAlignment="Top" FontFamily="Consolas" Width="126" Height="16" HorizontalAlignment="Left"/>
+        <TextBlock Name="lblOS" Margin="26,196,0,0" TextWrapping="Wrap" Text="Operating System >>" VerticalAlignment="Top" FontFamily="Consolas" Width="126" Height="16" HorizontalAlignment="Left"/>
         <ComboBox Name="tblOS" Width="282" Height="22" Margin="154,192,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" Grid.Column="0" Grid.Row="0" FontFamily="Consolas" />
         <TextBlock Name="lblOSVersion" Margin="26,229,0,0" TextWrapping="Wrap" Text="Version / Distribution >>" VerticalAlignment="Top" FontFamily="Consolas" Width="166" Height="16" HorizontalAlignment="Left"/>
         <TextBox Name="tbVMName" HorizontalAlignment="Left" Margin="92,132,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="344" Height="22" FontFamily="Consolas"/>
