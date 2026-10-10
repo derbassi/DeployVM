@@ -2,7 +2,7 @@
 
 #region Variables
 $iconPath="C:\gitHub\DeployVM\iconpath\DeployVM.png"
-$windowsList = @("Windows 7", "Windows 8","Windows 10", "Windows 11", "Windows 2016", "Windows 2019", "Windows 2022", "Windows 2025")
+$windowsList = @("Windows 7", "Windows 8", "Windows 10", "Windows 11", "Windows 2016", "Windows 2019", "Windows 2022", "Windows 2025")
 $linuxList = @("Ubuntu 20", "Ubuntu 21", "Ubuntu 22", "Ubuntu 23", "Ubuntu 24", "Ubuntu 25", "Ubuntu 26", "Debian 10", "Debian 11", "Debian 12", "Debian 13","Debian 14", "Suse 15", "Suse 16", "OpenSuse Leap 42", "OpenSuse Leap 15", "OpenSuse Leap 15", "Red Hat 7", "Red Hat 8", "Red Hat 9", "Cent OS 7", "Cent OS 8", "Cent OS 9 Stream", "Oracle Linux 7", "Oracle Linux 8", "Oracle Linux 9", "Fedora 36", "Fedora 37", "Fedora 38")
 #endregion Variables
 
@@ -196,6 +196,25 @@ $btnNext.Add_Click({
 $myForm.FindName("btnClose").add_click({
     $myForm.Close()
 })
+
+# Ensure the vCenter connection exists before any vSphere action is attempted.
+$vcServer = $env:VCENTER_SERVER
+if ([string]::IsNullOrWhiteSpace($vcServer)) {
+    $vcServer = Read-Host "Enter the vCenter server name or IP"
+}
+$vcUser = $env:VCENTER_USERNAME
+if ([string]::IsNullOrWhiteSpace($vcUser)) {
+    $vcUser = Read-Host "Enter the vCenter username"
+}
+$vcPassword = $env:VCENTER_PASSWORD
+if ([string]::IsNullOrWhiteSpace([string]$vcPassword)) {
+    $vcPassword = Read-Host "Enter the vCenter password" -AsSecureString
+}
+
+Import-Module VMware.VimAutomation.Core -ErrorAction Stop
+if ($null -eq $global:DefaultVIServer) {
+    Connect-VIServer -Server $vcServer -User $vcUser -Password $vcPassword -ErrorAction Stop | Out-Null
+}
 
 #Fill the ComboBoxes
 #List of Folders from vSphere
