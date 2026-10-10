@@ -59,7 +59,7 @@ $myForm.FindName("btnClose").add_click({
 #List of Folders
 Get-Folder | ForEach-Object {$_.Type -like "VM" -and -not ($_.name -in ("vm", "vCLs")) } | ForEach-Object {
     $tbVMfolder.items.Add($_.Name)
-    $tbVMfolder.SelectedIndex = 1
+    $tbVMfolder.SelectedIndex = 0
     } | Out-Null
 
 # List of Templates
