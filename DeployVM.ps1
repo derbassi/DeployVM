@@ -261,7 +261,7 @@ function Update-DatastoreList {
     $script:selectedIso = $null
     if ($null -eq $sel) { return }
     Get-Datastore -RelatedObject $sel.VMHost -ErrorAction SilentlyContinue |
-        Where-Object { $_.State -eq 'Available' -and $_.Accessible } |
+        Where-Object { $_.State -eq 'Available' } |
         Sort-Object Name |
         ForEach-Object { [void]$tblDatastore.Items.Add($_) }
     if ($tblDatastore.Items.Count -gt 0) { $tblDatastore.SelectedIndex = 0 }
@@ -407,7 +407,7 @@ $btnFetchISO.Add_Click({
     try {
         if ($null -eq $tblHost.SelectedItem) { throw "Select an ESXi host first." }
         $datastoresToSearch = @(Get-Datastore -RelatedObject $tblHost.SelectedItem.VMHost -ErrorAction Stop |
-                                Where-Object { $_.Accessible } | Sort-Object Name)
+                                Where-Object { $_.State -eq 'Available' } | Sort-Object Name)
         if ($datastoresToSearch.Count -eq 0) { throw "No accessible datastores are available on the selected host." }
 
         $isoSearchFailures = @()
