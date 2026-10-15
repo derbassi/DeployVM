@@ -72,10 +72,12 @@ $linuxGenericFallbacks = @("other5xLinux64Guest", "other4xLinux64Guest", "other3
 function Read-VIServerCredential {
     $loginXaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        Title="Connect to vSphere" Width="410" SizeToContent="Height"
+        Width="410" SizeToContent="Height"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
-        ShowInTaskbar="False">
-    <Grid Margin="20">
+        WindowStyle="None" ShowInTaskbar="False"
+        Background="#FFDFE084" FontFamily="Consolas">
+    <Border Background="#FFB5B188" BorderBrush="Black" BorderThickness="1" Padding="1">
+    <Grid Margin="19">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="110"/>
             <ColumnDefinition Width="*"/>
@@ -88,7 +90,8 @@ function Read-VIServerCredential {
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,16"
-                   FontSize="16" FontWeight="SemiBold" Text="vSphere sign in"/>
+                   FontFamily="Britannic Bold" FontSize="22" FontWeight="Bold"
+                   Text="Connect to vSphere"/>
         <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,0,10,12"
                    VerticalAlignment="Center" Text="Server"/>
         <TextBox Name="txtVIServer" Grid.Row="1" Grid.Column="1" Margin="0,0,0,12"
@@ -109,6 +112,7 @@ function Read-VIServerCredential {
                     Width="85" Height="28"/>
         </StackPanel>
     </Grid>
+    </Border>
 </Window>
 '@
     [xml]$loginDocument = $loginXaml
@@ -117,7 +121,10 @@ function Read-VIServerCredential {
     $serverInput = $loginWindow.FindName("txtVIServer")
     $usernameInput = $loginWindow.FindName("txtVIUsername")
     $passwordInput = $loginWindow.FindName("pwdVIPassword")
+    $cancelButton = $loginWindow.FindName("btnVICancel")
     $connectButton = $loginWindow.FindName("btnVIConnect")
+
+    $cancelButton.Add_Click({ $loginWindow.DialogResult = $false })
 
     $connectButton.Add_Click({
         $enteredPassword = $passwordInput.SecurePassword
