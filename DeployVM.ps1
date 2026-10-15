@@ -1,7 +1,22 @@
-﻿Add-Type -AssemblyName PresentationFramework, System.Drawing, System.Windows.Forms, WindowsFormsIntegration
+﻿<#
+.SYNOPSIS
+    Deploys a virtual machine to VMware vSphere.
+
+.DESCRIPTION
+    Provides a graphical interface for configuring and creating a powered-off
+    virtual machine with the selected guest OS, compute resources, disks, and
+    optional ISO installation media.
+
+.NOTES
+    Author  : Badrane DERBAZI
+    Version : 2.0.0
+    Date    : 2026-10-15
+#>
+
+Add-Type -AssemblyName PresentationFramework, System.Drawing, System.Windows.Forms, WindowsFormsIntegration
 
 #region Variables
-$iconPath    = "E:\powershell scripts\DeployVM\DeployVM.png"  # Change this to the path of your icon file
+$iconPath    = "iconpath\DeployVM.png"  # Change this to the path of your icon file
 $windowsList = @("Windows 10", "Windows 11", "Windows 2016", "Windows 2019", "Windows 2022", "Windows 2025")
 $linuxList   = @("Ubuntu 20", "Ubuntu 21", "Ubuntu 22", "Debian 10", "Debian 11", "Debian 12", "Debian 15", "Suse 15", "OpenSuse Leap 42", "OpenSuse Leap 15", "Red Hat 7", "Red Hat 8", "Red Hat 9", "Cent OS 7", "Cent OS 8", "Cent OS 9 Stream", "Oracle Linux 7", "Oracle Linux 8", "Oracle Linux 9", "Fedora 36", "Fedora 37", "Fedora 38")
 $maxDisks    = 15   # one SCSI controller = 15 usable slots
