@@ -640,19 +640,52 @@ $btnDiskDeploy.Add_Click({
             throw "VM '$vmName' should remain powered off after deployment, but its current state is '$($createdVM.PowerState)'."
         }
 
-        $guestProfileMessage = ""
+        $messageLines = @(
+            "Deployment completed successfully."
+            ""
+            "VM DETAILS"
+            "  Name: $vmName"
+            "  Host: $($hostOption.Name)"
+            "  Datastore: $($datastore.Name)"
+            "  Power state: Powered off"
+            ""
+            "RESOURCES"
+            "  CPU: $totalCpuCount vCPU(s) across $socketCount socket(s)"
+            "  Memory: $memoryGB GB"
+            "  Disks: $($diskSizesGB.Count) $diskStorageFormat"
+        )
         if ($selectedGuestId -ne $requestedGuestId) {
-            $guestProfileMessage = " The host-compatible guest profile '$selectedGuestProfileName' was used instead of '$osVersion'."
+            $messageLines += @(
+                ""
+                "GUEST PROFILE"
+                "  Selected: $osVersion"
+                "  Used: $selectedGuestProfileName (host-compatible fallback)"
+            )
         }
-        $isoMessage = " No ISO was selected."
         if ($null -ne $selectedIso) {
-            $isoMessage = " ISO '$($selectedIso.Name)' is mounted and configured to connect when the VM is powered on."
+            $messageLines += @(
+                ""
+                "INSTALL MEDIA"
+                "  ISO: $($selectedIso.Name)"
+                "  Connect: When the VM is powered on"
+            )
         }
-        $warningMessage = ""
-        if ($warnings.Count -gt 0) { $warningMessage = "`n`nWarnings:`n- " + ($warnings -join "`n- ") }
+        else {
+            $messageLines += @(
+                ""
+                "INSTALL MEDIA"
+                "  ISO: None selected"
+            )
+        }
+        if ($warnings.Count -gt 0) {
+            $messageLines += @("", "WARNINGS")
+            foreach ($warning in $warnings) {
+                $messageLines += "  - $warning"
+            }
+        }
 
         & $updateDeploymentProgress 100 "Deployment complete." @dp
-        Show-Box "VM '$vmName' was created on '$($hostOption.Name)' using datastore '$($datastore.Name)' with $socketCount socket(s), $totalCpuCount vCPU(s), and $($diskSizesGB.Count) $diskStorageFormat disk(s). It is powered off.$isoMessage$guestProfileMessage$warningMessage" "VM deployment complete" ([System.Windows.MessageBoxButton]::OK) ([System.Windows.MessageBoxImage]::Information) | Out-Null
+        Show-Box ($messageLines -join "`n") "VM deployment complete" ([System.Windows.MessageBoxButton]::OK) ([System.Windows.MessageBoxImage]::Information) | Out-Null
     }
     catch {
         $txtDiskDeploymentStatus.Text = "Deployment failed."
