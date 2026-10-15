@@ -1,13 +1,83 @@
-﻿Add-Type -AssemblyName PresentationFramework, System.Drawing, System.Windows.Forms, WindowsFormsIntegration
+﻿Here is the complete corrected script. Everything in the review is applied, with a few adjustments I made while rewriting it (listed after the script).
+
+Add-Type -AssemblyName PresentationFramework, System.Drawing, System.Windows.Forms, WindowsFormsIntegration
 
 #region Variables
-$iconPath="C:\gitHub\DeployVM\iconpath\DeployVM.png"
-$windowsList = @("Windows 7", "Windows 8", "Windows 10", "Windows 11", "Windows 2016", "Windows 2019", "Windows 2022", "Windows 2025")
-$linuxList = @("Ubuntu 20", "Ubuntu 21", "Ubuntu 22", "Ubuntu 23", "Ubuntu 24", "Ubuntu 25", "Ubuntu 26", "Debian 10", "Debian 11", "Debian 12", "Debian 13","Debian 14", "Suse 15", "Suse 16", "OpenSuse Leap 42", "OpenSuse Leap 15", "OpenSuse Leap 15", "Red Hat 7", "Red Hat 8", "Red Hat 9", "Cent OS 7", "Cent OS 8", "Cent OS 9 Stream", "Oracle Linux 7", "Oracle Linux 8", "Oracle Linux 9", "Fedora 36", "Fedora 37", "Fedora 38")
+$iconPath    = "C:\gitHub\DeployVM\DeployVM.png"
+$windowsList = @("Windows 10", "Windows 11", "Windows 2016", "Windows 2019", "Windows 2022", "Windows 2025")
+$linuxList   = @("Ubuntu 20", "Ubuntu 21", "Ubuntu 22", "Debian 10", "Debian 11", "Debian 12", "Debian 15", "Suse 15", "OpenSuse Leap 42", "OpenSuse Leap 15", "Red Hat 7", "Red Hat 8", "Red Hat 9", "Cent OS 7", "Cent OS 8", "Cent OS 9 Stream", "Oracle Linux 7", "Oracle Linux 8", "Oracle Linux 9", "Fedora 36", "Fedora 37", "Fedora 38")
+$maxDisks    = 15   # one SCSI controller = 15 usable slots
 #endregion Variables
 
-#region XAML
-[xml]$xaml=@'
+#region Guest OS tables
+# Guest OS identifiers (VirtualMachineGuestOsIdentifier) used by vSphere when creating the VM.
+$guestIdBySelection = @{
+    "Windows|Windows 10"       = "windows9_64Guest"
+    "Windows|Windows 11"       = "windows11_64Guest"
+    "Windows|Windows 2016"     = "windows9Server64Guest"
+    "Windows|Windows 2019"     = "windows2019srv_64Guest"
+    "Windows|Windows 2022"     = "windows2019srvNext_64Guest"
+    "Windows|Windows 2025"     = "windows2022srvNext_64Guest"
+    "Linux|Ubuntu 20"          = "ubuntu64Guest"
+    "Linux|Ubuntu 21"          = "ubuntu64Guest"
+    "Linux|Ubuntu 22"          = "ubuntu64Guest"
+    "Linux|Debian 10"          = "debian10_64Guest"
+    "Linux|Debian 11"          = "debian11_64Guest"
+    "Linux|Debian 12"          = "debian12_64Guest"
+    "Linux|Debian 15"          = "otherLinux64Guest"
+    "Linux|Suse 15"            = "sles15_64Guest"
+    "Linux|OpenSuse Leap 42"   = "opensuse64Guest"
+    "Linux|OpenSuse Leap 15"   = "opensuse64Guest"
+    "Linux|Red Hat 7"          = "rhel7_64Guest"
+    "Linux|Red Hat 8"          = "rhel8_64Guest"
+    "Linux|Red Hat 9"          = "rhel9_64Guest"
+    "Linux|Cent OS 7"          = "centos7_64Guest"
+    "Linux|Cent OS 8"          = "centos8_64Guest"
+    "Linux|Cent OS 9 Stream"   = "centos9_64Guest"
+    "Linux|Oracle Linux 7"     = "oracleLinux7_64Guest"
+    "Linux|Oracle Linux 8"     = "oracleLinux8_64Guest"
+    "Linux|Oracle Linux 9"     = "oracleLinux9_64Guest"
+    "Linux|Fedora 36"          = "fedora64Guest"
+    "Linux|Fedora 37"          = "fedora64Guest"
+    "Linux|Fedora 38"          = "fedora64Guest"
+}
+$guestIdFallbacksBySelection = @{
+    "Windows|Windows 10"   = @("windows8_1_64Guest", "windows8_64Guest")
+    "Windows|Windows 11"   = @("windows9_64Guest", "windows8_1_64Guest")
+    "Windows|Windows 2016" = @("windows2019srv_64Guest", "windows2012srv_64Guest", "windows9_64Guest")
+    "Windows|Windows 2019" = @("windows9Server64Guest", "windows2012srv_64Guest", "windows9_64Guest")
+    "Windows|Windows 2022" = @("windows2019srv_64Guest", "windows9Server64Guest", "windows9_64Guest")
+    "Windows|Windows 2025" = @("windows2019srvNext_64Guest", "windows2019srv_64Guest", "windows9Server64Guest", "windows9_64Guest")
+    "Linux|Cent OS 9 Stream" = @("centos8_64Guest", "centos7_64Guest")
+}
+# Generic fallbacks for any Linux selection that has no specific fallback or whose profile is missing.
+$linuxGenericFallbacks = @("other5xLinux64Guest", "other4xLinux64Guest", "other3xLinux64Guest", "otherLinux64Guest")
+#endregion Guest OS tables
+
+#region PowerCLI connection
+if (-not (Get-Module -Name VMware.VimAutomation.Core)) {
+    try { Import-Module VMware.VimAutomation.Core -ErrorAction Stop }
+    catch {
+        [System.Windows.MessageBox]::Show("VMware PowerCLI could not be loaded: $($_.Exception.Message)",
+            "PowerCLI missing", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error) | Out-Null
+        return
+    }
+}
+if (-not ($global:DefaultVIServers | Where-Object { $_.IsConnected })) {
+    try {
+        $viServer = Read-Host "vCenter / ESXi FQDN"
+        Connect-VIServer -Server $viServer -ErrorAction Stop | Out-Null
+    }
+    catch {
+        [System.Windows.MessageBox]::Show("Could not connect to '$viServer': $($_.Exception.Message)",
+            "Connection failed", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error) | Out-Null
+        return
+    }
+}
+#endregion PowerCLI connection
+
+#region XAML - main window
+$xamlText = @'
 <?xml version="1.0" encoding ="utf-16"?>
 <Window 
 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" 
@@ -15,20 +85,20 @@ Name="VMDeploy" Title="VM Deploy" Height="432" Width="464" WindowStartupLocation
 <Grid Background="#FFB5B188" Width="464" Margin="0,0,0,1">
         <Rectangle HorizontalAlignment="Center" Height="94" Stroke="Black" VerticalAlignment="Top" Width="452" Margin="0,4,0,0"/>
         <Label Content="Deploy VMware VM" HorizontalAlignment="Left" Margin="100,26,0,0" VerticalAlignment="Top" FontFamily="Britannic Bold" FontSize="36" Width="350" FontWeight="Bold"/>
-        <Image Height="77" Width="87" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,12,0,0" Source="C:\gitHub\DeployVM\DeployVM.png" Stretch="Fill"/>
-        <GroupBox Name="gbServer" Height="264" Margin="6,112,5,0" VerticalAlignment="Top" Header=" VM Caracteristics"/>
-        <TextBlock Name="lblVMfolder" HorizontalAlignment="Left" Margin="26,165,0,0" TextWrapping="Wrap" Text="Folder >>" VerticalAlignment="Top" FontFamily="Consolas" Width="60" Height="16"/>
+        <Image Height="77" Width="87" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,12,0,0" Source="__ICONPATH__" Stretch="Fill"/>
+        <GroupBox Name="gbServer" Height="264" Margin="6,112,5,0" VerticalAlignment="Top" Header=" VM Characteristics"/>
+        <TextBlock Name="lblVMfolder" HorizontalAlignment="Left" Margin="26,165,0,0" TextWrapping="Wrap" Text="Folder &gt;&gt;" VerticalAlignment="Top" FontFamily="Consolas" Width="60" Height="16"/>
         <ComboBox Name="tbVMfolder" Width="344" Height="22" Margin="92,161,0,0" HorizontalAlignment="Left" Grid.Column="0" Grid.Row="0" VerticalAlignment="Top" FontFamily="Consolas" />
         <TextBlock Name="lblVMName" HorizontalAlignment="Left" Margin="26,135,0,0" TextWrapping="Wrap" Text="Name &gt;&gt;" VerticalAlignment="Top" FontFamily="Consolas" Width="60" Height="16"/>
         <TextBlock Name="lblCPU" HorizontalAlignment="Left" Margin="25,297,0,0" TextWrapping="NoWrap" Text="Sockets:" VerticalAlignment="Top" Height="16" Width="52" FontFamily="Consolas"/>
         <TextBlock Name="lblCore" HorizontalAlignment="Left" Margin="145,297,0,0" TextWrapping="NoWrap" Text="Cores/socket:" VerticalAlignment="Top" Width="94" Height="16" FontFamily="Consolas"/>
         <TextBlock Name="lblMemory" HorizontalAlignment="Left" Margin="309,297,0,0" TextWrapping="NoWrap" Text="RAM (GB):" VerticalAlignment="Top" Width="58" Height="16" FontFamily="Consolas"/>
-        <TextBlock Name="lblOS" Margin="26,196,0,0" TextWrapping="Wrap" Text="Operation System >>" VerticalAlignment="Top" FontFamily="Consolas" Width="126" Height="16" HorizontalAlignment="Left"/>
+        <TextBlock Name="lblOS" Margin="26,196,0,0" TextWrapping="Wrap" Text="Operating System &gt;&gt;" VerticalAlignment="Top" FontFamily="Consolas" Width="126" Height="16" HorizontalAlignment="Left"/>
         <ComboBox Name="tblOS" Width="282" Height="22" Margin="154,192,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" Grid.Column="0" Grid.Row="0" FontFamily="Consolas" />
-        <TextBlock Name="lblOSVersion" Margin="26,229,0,0" TextWrapping="Wrap" Text="Version / Distribution >>" VerticalAlignment="Top" FontFamily="Consolas" Width="166" Height="16" HorizontalAlignment="Left"/>
+        <TextBlock Name="lblOSVersion" Margin="26,229,0,0" TextWrapping="Wrap" Text="Version / Distribution &gt;&gt;" VerticalAlignment="Top" FontFamily="Consolas" Width="166" Height="16" HorizontalAlignment="Left"/>
         <TextBox Name="tbVMName" HorizontalAlignment="Left" Margin="92,132,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="344" Height="22" FontFamily="Consolas"/>
         <TextBlock Name="lblISO" HorizontalAlignment="Left" Margin="26,261,0,0" TextWrapping="NoWrap" Text="ISO file &gt;&gt;" VerticalAlignment="Top" Width="70" Height="16" FontFamily="Consolas"/>
-        <ComboBox Name="tbISO" Width="258" Height="22" Margin="102,254,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" FontFamily="Consolas" ToolTip="ISO images found on all connected datastores, including local datastores"/>
+        <ComboBox Name="tbISO" Width="258" Height="22" Margin="102,254,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" FontFamily="Consolas" ToolTip="ISO images found on the datastores accessible from the selected host"/>
         <Button Name="btnFetchISO" HorizontalAlignment="Left" Margin="368,254,0,0" VerticalAlignment="Top" Width="70" Height="22" FontFamily="Consolas" Content="Fetch ISOs"/>
         <Rectangle HorizontalAlignment="Center" Height="37" Margin="0,286,0,0" Stroke="Black" VerticalAlignment="Top" Width="432"/>
         <ComboBox Name="tbCpu" HorizontalAlignment="Left" Margin="80,295,0,0" VerticalAlignment="Top" Width="50" Height="22" FontFamily="Consolas"/>
@@ -47,11 +117,20 @@ Name="VMDeploy" Title="VM Deploy" Height="432" Width="464" WindowStartupLocation
     </Grid>
 </Window>
 '@
-$myReader = (New-Object System.Xml.XmlNodeReader $xaml)
+# Use the configurable icon path; drop the image gracefully if the file is missing.
+if (Test-Path -LiteralPath $iconPath) {
+    $xamlText = $xamlText.Replace('__ICONPATH__', [System.Security.SecurityElement]::Escape($iconPath))
+}
+else {
+    $xamlText = [regex]::Replace($xamlText, '<Image\b[^>]*/>', '')
+}
+[xml]$xaml = $xamlText
+$myReader = New-Object System.Xml.XmlNodeReader $xaml
 $myForm = [Windows.Markup.XamlReader]::Load($myReader)
-$xaml.SelectNodes("//*[@Name]") | ForEach-Object {Set-Variable -Name ($_.Name) -Value $myForm.FindName($_.Name)}
+$xaml.SelectNodes("//*[@Name]") | ForEach-Object { Set-Variable -Name ($_.Name) -Value $myForm.FindName($_.Name) -Scope Script }
 #endregion
 
+#region XAML - disk window
 [xml]$diskConfigXaml = @'
 <?xml version="1.0" encoding="utf-16"?>
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -73,75 +152,139 @@ $xaml.SelectNodes("//*[@Name]") | ForEach-Object {Set-Variable -Name ($_.Name) -
                 <ColumnDefinition Width="100"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Number of disks:" VerticalAlignment="Center"
-                       FontFamily="Consolas"/>
-            <TextBox Name="tbDiskCount" Grid.Column="1" Text="1" Height="26"
-                     VerticalContentAlignment="Center" FontFamily="Consolas"/>
-            <Button Name="btnSetDiskCount" Grid.Column="2" Content="Set count" Height="26"
-                    Margin="8,0,0,0" FontFamily="Consolas"/>
+            <TextBlock Grid.Column="0" Text="Number of disks:" VerticalAlignment="Center" FontFamily="Consolas"/>
+            <TextBox Name="tbDiskCount" Grid.Column="1" Text="1" Height="26" VerticalContentAlignment="Center" FontFamily="Consolas"/>
+            <Button Name="btnSetDiskCount" Grid.Column="2" Content="Set count" Height="26" Margin="8,0,0,0" FontFamily="Consolas"/>
         </Grid>
         <Grid Grid.Row="1" Margin="12,0,12,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="130"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="Disk type:" VerticalAlignment="Center"
-                       FontFamily="Consolas"/>
-            <ComboBox Name="cbDiskType" Grid.Column="1" Height="26"
-                      FontFamily="Consolas"/>
+            <TextBlock Grid.Column="0" Text="Disk type:" VerticalAlignment="Center" FontFamily="Consolas"/>
+            <ComboBox Name="cbDiskType" Grid.Column="1" Height="26" FontFamily="Consolas"/>
         </Grid>
-        <TextBlock Grid.Row="2" Margin="12,0,12,6" Text="Enter each disk capacity in GB:"
-                   VerticalAlignment="Center" FontFamily="Consolas"/>
-        <ScrollViewer Grid.Row="3" Margin="12,0,12,8"
-                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <TextBlock Grid.Row="2" Margin="12,0,12,6" Text="Enter each disk capacity in GB:" VerticalAlignment="Center" FontFamily="Consolas"/>
+        <ScrollViewer Grid.Row="3" Margin="12,0,12,8" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Name="spDiskSizes"/>
         </ScrollViewer>
         <Grid Grid.Row="4" Margin="12,4,12,10">
-            <ProgressBar Name="pbDiskDeployment" Height="26" Minimum="0" Maximum="100" Value="0"
-                     Background="#FF404040" Foreground="#FF16803C"/>
-            <TextBlock Name="txtDiskDeploymentStatus" Height="18" Text="Ready"
-                       VerticalAlignment="Center" FontFamily="Consolas"
-                       Foreground="White" TextAlignment="Center" IsHitTestVisible="False"/>
+            <ProgressBar Name="pbDiskDeployment" Height="26" Minimum="0" Maximum="100" Value="0" Background="#FF404040" Foreground="#FF16803C"/>
+            <TextBlock Name="txtDiskDeploymentStatus" Height="18" Text="Ready" VerticalAlignment="Center" FontFamily="Consolas" Foreground="White" TextAlignment="Center" IsHitTestVisible="False"/>
         </Grid>
-        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right"
-                    Margin="12,0,12,10">
-            <Button Name="btnDiskBack" Content="Back" Width="90" Height="28"
-                    Margin="0,0,8,0" FontFamily="Consolas"/>
-            <Button Name="btnDiskDeploy" Content="Deploy" Width="110" Height="28"
-                    Margin="0,0,8,0" FontFamily="Consolas"/>
-            <Button Name="btnDiskClose" Content="Close" Width="80" Height="28"
-                    FontFamily="Consolas"/>
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="12,0,12,10">
+            <Button Name="btnDiskBack" Content="Back" Width="90" Height="28" Margin="0,0,8,0" FontFamily="Consolas"/>
+            <Button Name="btnDiskDeploy" Content="Deploy" Width="110" Height="28" Margin="0,0,8,0" FontFamily="Consolas"/>
+            <Button Name="btnDiskClose" Content="Close" Width="80" Height="28" FontFamily="Consolas"/>
         </StackPanel>
     </Grid>
 </Window>
 '@
 $diskConfigReader = New-Object System.Xml.XmlNodeReader $diskConfigXaml
 $diskConfigWindow = [Windows.Markup.XamlReader]::Load($diskConfigReader)
-$tbDiskCount = $diskConfigWindow.FindName("tbDiskCount")
-$btnSetDiskCount = $diskConfigWindow.FindName("btnSetDiskCount")
-$cbDiskType = $diskConfigWindow.FindName("cbDiskType")
-$spDiskSizes = $diskConfigWindow.FindName("spDiskSizes")
-$pbDiskDeployment = $diskConfigWindow.FindName("pbDiskDeployment")
+$tbDiskCount             = $diskConfigWindow.FindName("tbDiskCount")
+$btnSetDiskCount         = $diskConfigWindow.FindName("btnSetDiskCount")
+$cbDiskType              = $diskConfigWindow.FindName("cbDiskType")
+$spDiskSizes             = $diskConfigWindow.FindName("spDiskSizes")
+$pbDiskDeployment        = $diskConfigWindow.FindName("pbDiskDeployment")
 $txtDiskDeploymentStatus = $diskConfigWindow.FindName("txtDiskDeploymentStatus")
-$btnDiskBack = $diskConfigWindow.FindName("btnDiskBack")
-$btnDiskDeploy = $diskConfigWindow.FindName("btnDiskDeploy")
-$btnDiskClose = $diskConfigWindow.FindName("btnDiskClose")
+$btnDiskBack             = $diskConfigWindow.FindName("btnDiskBack")
+$btnDiskDeploy           = $diskConfigWindow.FindName("btnDiskDeploy")
+$btnDiskClose            = $diskConfigWindow.FindName("btnDiskClose")
+#endregion
 
+#region Helpers
+$updateDeploymentProgress = {
+    param(
+        [double]$Percent,
+        [string]$Status,
+        [object]$ProgressBar = $pbDeployment,
+        [object]$StatusText = $txtDeploymentStatus,
+        [object]$ProgressWindow = $myForm
+    )
+    $ProgressBar.IsIndeterminate = $false
+    $ProgressBar.Value = $Percent
+    $StatusText.Text = $Status
+    # Render priority forces a repaint even while the UI thread is busy.
+    $ProgressWindow.Dispatcher.Invoke([Action] {}, [Windows.Threading.DispatcherPriority]::Render)
+}
+
+function Show-Box {
+    param(
+        [string]$Text,
+        [string]$Title,
+        [System.Windows.MessageBoxButton]$Buttons = [System.Windows.MessageBoxButton]::OK,
+        [System.Windows.MessageBoxImage]$Icon = [System.Windows.MessageBoxImage]::Information
+    )
+    [System.Windows.MessageBox]::Show($Text, $Title, $Buttons, $Icon)
+}
+
+function Get-VMFolderDisplayName {
+    param([object]$Folder)
+    try {
+        $parts = New-Object System.Collections.Generic.List[string]
+        $current = $Folder
+        $guard = 0
+        while ($null -ne $current -and $current.Name -ne 'vm' -and $guard -lt 32) {
+            $parts.Insert(0, $current.Name)
+            $current = $current.Parent
+            $guard++
+        }
+        if ($parts.Count -gt 0) { return ($parts -join '/') }
+    }
+    catch { }
+    return $Folder.Name
+}
+
+function Get-DatastoreIso {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Datastore)
+
+    $datastoreBrowser = Get-View -Id $Datastore.ExtensionData.Browser -ErrorAction Stop
+    $searchSpec = New-Object VMware.Vim.HostDatastoreBrowserSearchSpec
+    $searchSpec.MatchPattern = @("*.iso", "*.ISO")
+    $searchSpec.Query = @((New-Object VMware.Vim.IsoImageFileQuery))
+
+    $searchResults = $datastoreBrowser.SearchDatastoreSubFolders("[$($Datastore.Name)]", $searchSpec)
+    foreach ($folderResult in $searchResults) {
+        foreach ($file in $folderResult.File) {
+            [PSCustomObject]@{
+                Name    = "$($folderResult.FolderPath)$($file.Path)"
+                IsoPath = "$($folderResult.FolderPath)$($file.Path)"
+            }
+        }
+    }
+}
+
+function Update-DatastoreList {
+    $sel = $tblHost.SelectedItem
+    $tblDatastore.Items.Clear()
+    $tbISO.Items.Clear()
+    $script:selectedIso = $null
+    if ($null -eq $sel) { return }
+    Get-Datastore -RelatedObject $sel.VMHost -ErrorAction SilentlyContinue |
+        Where-Object { $_.State -eq 'Available' -and $_.Accessible } |
+        Sort-Object Name |
+        ForEach-Object { [void]$tblDatastore.Items.Add($_) }
+    if ($tblDatastore.Items.Count -gt 0) { $tblDatastore.SelectedIndex = 0 }
+}
+#endregion
+
+#region Disk window logic
 [void]$cbDiskType.Items.Add("Thin")
 [void]$cbDiskType.Items.Add("Thick (lazy zeroed)")
 $cbDiskType.SelectedIndex = 0
 
 $setDiskRows = {
     $diskCount = 0
-    if (-not [int]::TryParse($tbDiskCount.Text.Trim(), [ref]$diskCount) -or $diskCount -lt 1) {
-        [System.Windows.MessageBox]::Show(
-            "Enter a positive whole-number disk count.",
-            "Invalid disk count",
-            [System.Windows.MessageBoxButton]::OK,
-            [System.Windows.MessageBoxImage]::Warning
-        ) | Out-Null
+    if (-not [int]::TryParse($tbDiskCount.Text.Trim(), [ref]$diskCount) -or $diskCount -lt 1 -or $diskCount -gt $maxDisks) {
+        Show-Box "Enter a whole number of disks between 1 and $maxDisks." "Invalid disk count" ([System.Windows.MessageBoxButton]::OK) ([System.Windows.MessageBoxImage]::Warning) | Out-Null
         return
     }
+
+    # Preserve sizes that were already typed.
+    $previousSizes = @()
+    foreach ($row in $spDiskSizes.Children) { $previousSizes += $row.Children[1].Text }
 
     $spDiskSizes.Children.Clear()
     for ($diskIndex = 1; $diskIndex -le $diskCount; $diskIndex++) {
@@ -160,6 +303,7 @@ $setDiskRows = {
         $diskSizeInput.Height = 24
         $diskSizeInput.Tag = $diskIndex
         $diskSizeInput.FontFamily = New-Object System.Windows.Media.FontFamily("Consolas")
+        if ($diskIndex -le $previousSizes.Count) { $diskSizeInput.Text = $previousSizes[$diskIndex - 1] }
 
         [void]$diskRow.Children.Add($diskLabel)
         [void]$diskRow.Children.Add($diskSizeInput)
@@ -167,168 +311,106 @@ $setDiskRows = {
     }
 }
 & $setDiskRows
-
 $btnSetDiskCount.Add_Click($setDiskRows)
-$btnDiskBack.Add_Click({
-    $diskConfigWindow.Tag = "Back"
-    $diskConfigWindow.Close()
-})
+
+# Back: hide (not close) so the window can be shown again.
+$btnDiskBack.Add_Click({ $diskConfigWindow.Hide() })
+
 $btnDiskClose.Add_Click({
     $ownerWindow = $diskConfigWindow.Owner
     $diskConfigWindow.Tag = "ClosingAll"
     $diskConfigWindow.Close()
-    if ($null -ne $ownerWindow) {
-        $ownerWindow.Close()
-    }
+    if ($null -ne $ownerWindow) { $ownerWindow.Close() }
 })
+
 $diskConfigWindow.Add_Closing({
-    if ($diskConfigWindow.Tag -ne "Back" -and $diskConfigWindow.Tag -ne "ClosingAll" -and $null -ne $diskConfigWindow.Owner) {
+    # Only react to a real close of a visible window (X button); ignore closes triggered by the owner.
+    if ($diskConfigWindow.IsVisible -and $diskConfigWindow.Tag -ne "ClosingAll" -and $null -ne $diskConfigWindow.Owner) {
         $diskConfigWindow.Tag = "ClosingAll"
         $diskConfigWindow.Owner.Close()
     }
 })
+#endregion
+
+#region Main window logic
 $btnNext.Add_Click({
-    $diskConfigWindow.Owner = $myForm
+    if ([string]::IsNullOrWhiteSpace($tbVMName.Text)) {
+        Show-Box "Enter a VM name." "Missing information" ([System.Windows.MessageBoxButton]::OK) ([System.Windows.MessageBoxImage]::Warning) | Out-Null
+        return
+    }
+    if ($null -eq $tbVMfolder.SelectedItem -or $null -eq $tblHost.SelectedItem -or $null -eq $tblDatastore.SelectedItem) {
+        Show-Box "Select a VM folder, an ESXi host and a datastore." "Missing information" ([System.Windows.MessageBoxButton]::OK) ([System.Windows.MessageBoxImage]::Warning) | Out-Null
+        return
+    }
+    if ($null -eq $tblOSVersion.SelectedItem -or $null -eq $tbMemory.SelectedItem) {
+        Show-Box "Select the operating system version and memory size." "Missing information" ([System.Windows.MessageBoxButton]::OK) ([System.Windows.MessageBoxImage]::Warning) | Out-Null
+        return
+    }
+    if ($null -eq $diskConfigWindow.Owner) { $diskConfigWindow.Owner = $myForm }
     $diskConfigWindow.Tag = $null
     $diskConfigWindow.ShowDialog() | Out-Null
 })
 
-$myForm.FindName("btnClose").add_click({
-    $myForm.Close()
-})
+$btnClose.Add_Click({ $myForm.Close() })
 
-# Ensure the vCenter connection exists before any vSphere action is attempted.
-$vcServer = $env:VCENTER_SERVER
-if ([string]::IsNullOrWhiteSpace($vcServer)) {
-    $vcServer = Read-Host "Enter the vCenter server name or IP"
-}
-$vcUser = $env:VCENTER_USERNAME
-if ([string]::IsNullOrWhiteSpace($vcUser)) {
-    $vcUser = Read-Host "Enter the vCenter username"
-}
-$vcPassword = $env:VCENTER_PASSWORD
-if ([string]::IsNullOrWhiteSpace([string]$vcPassword)) {
-    $vcPassword = Read-Host "Enter the vCenter password" -AsSecureString
-}
+# The main window has no title bar, so allow dragging it.
+$myForm.Add_MouseLeftButtonDown({ try { $myForm.DragMove() } catch { } })
 
-Import-Module VMware.VimAutomation.Core -ErrorAction Stop
-if ($null -eq $global:DefaultVIServer) {
-    Connect-VIServer -Server $vcServer -User $vcUser -Password $vcPassword -ErrorAction Stop | Out-Null
-}
-
-#Fill the ComboBoxes
-#List of Folders from vSphere
+# VM folders (with path so duplicates are distinguishable)
 $tbVMfolder.DisplayMemberPath = "Name"
-Get-Folder -Type VM | Where-Object { $_.Name -notin @("vm", "vCLs") } | Sort-Object Name | ForEach-Object {
-    [void]$tbVMfolder.Items.Add($_)
-}
-if ($tbVMfolder.Items.Count -gt 0) {
-    $tbVMfolder.SelectedIndex = 0
-}
+Get-Folder -Type VM | Where-Object { $_.Name -notin @("vm", "vCLS") } | ForEach-Object {
+    [PSCustomObject]@{ Name = (Get-VMFolderDisplayName -Folder $_); Folder = $_ }
+} | Sort-Object Name | ForEach-Object { [void]$tbVMfolder.Items.Add($_) }
+if ($tbVMfolder.Items.Count -gt 0) { $tbVMfolder.SelectedIndex = 0 }
 
-# OS and version / distribution choices
+# OS and version / distribution
 [void]$tblOS.Items.Add("Windows")
 [void]$tblOS.Items.Add("Linux")
 $tblOS.add_SelectionChanged({
     $tblOSVersion.Items.Clear()
     $versions = switch ($tblOS.SelectedItem) {
         "Windows" { $windowsList }
-        "Linux" { $linuxList }
-        default { @() }
+        "Linux"   { $linuxList }
+        default   { @() }
     }
-    foreach ($version in $versions) {
-        [void]$tblOSVersion.Items.Add($version)
-    }
-    if ($tblOSVersion.Items.Count -gt 0) {
-        $tblOSVersion.SelectedIndex = 0
-    }
+    foreach ($version in $versions) { [void]$tblOSVersion.Items.Add($version) }
+    if ($tblOSVersion.Items.Count -gt 0) { $tblOSVersion.SelectedIndex = 0 }
 })
 $tblOS.SelectedIndex = 0
 
-# CPU choices
-$cpuOptions = @(1, 2, 4, 8, 16, 32)
-foreach ($cpu in $cpuOptions) {
-    [void]$tbCpu.Items.Add($cpu)
-}
+# CPU / cores / memory
+foreach ($cpu in @(1, 2, 4, 8, 16, 32))                          { [void]$tbCpu.Items.Add($cpu) }
 $tbCpu.SelectedIndex = 0
-
-# Core choices
-$coreOptions = @(1, 2, 3, 4, 6, 8, 12, 16, 24, 32)
-foreach ($core in $coreOptions) {
-    [void]$tbCore.Items.Add($core)
-}
+foreach ($core in @(1, 2, 3, 4, 6, 8, 12, 16, 24, 32))           { [void]$tbCore.Items.Add($core) }
 $tbCore.SelectedIndex = 0
-
-# Memory choices in GB
-$memoryOptions = @(1, 2, 3, 4, 6, 8, 16, 24, 32, 64, 96, 128, 512)
-foreach ($memory in $memoryOptions) {
-    [void]$tbMemory.Items.Add($memory)
-}
+foreach ($memory in @(1, 2, 3, 4, 6, 8, 16, 24, 32, 64, 96, 128, 512)) { [void]$tbMemory.Items.Add($memory) }
 $tbMemory.SelectedIndex = 0
 
-#List of Datastores
+# Datastores follow the selected host
 $tblDatastore.DisplayMemberPath = "Name"
-Get-Datastore | Sort-Object Name | ForEach-Object {
-    [void]$tblDatastore.Items.Add($_)
-}
-if ($tblDatastore.Items.Count -gt 0) {
-    $tblDatastore.SelectedIndex = 0
-}
-
-#List of Hosts
 $tblHost.DisplayMemberPath = "Name"
+$tblHost.Add_SelectionChanged({ Update-DatastoreList })
+
+# Hosts (the selection event above fills the datastore list)
 Get-VMHost | Where-Object { $_.ConnectionState -eq 'Connected' } | Sort-Object Name | ForEach-Object {
-    $hostOption = [PSCustomObject]@{
-        Name = $_.Name.Split(".")[0]
-        VMHost = $_
-    }
-    [void]$tblHost.Items.Add($hostOption)
+    $shortName = if ($_.Name -match '^\d{1,3}(\.\d{1,3}){3}$') { $_.Name } else { $_.Name.Split(".")[0] }
+    [void]$tblHost.Items.Add([PSCustomObject]@{ Name = $shortName; VMHost = $_ })
 }
-if ($tblHost.Items.Count -gt 0) {
-    $tblHost.SelectedIndex = 0
-}
+if ($tblHost.Items.Count -gt 0) { $tblHost.SelectedIndex = 0 }
 
-function Get-DatastoreIso {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [object]$Datastore
-    )
-
-    $datastoreBrowser = Get-View -Id $Datastore.ExtensionData.Browser -ErrorAction Stop
-    $searchSpec = New-Object VMware.Vim.HostDatastoreBrowserSearchSpec
-    $searchSpec.MatchPattern = @("*.iso", "*.ISO")
-    $searchSpec.Query = @((New-Object VMware.Vim.IsoImageFileQuery))
-
-    $searchResults = $datastoreBrowser.SearchDatastoreSubFolders(
-        "[$($Datastore.Name)]",
-        $searchSpec
-    )
-
-    foreach ($folderResult in $searchResults) {
-        foreach ($file in $folderResult.File) {
-            [PSCustomObject]@{
-                Name = "$($Datastore.Name): $($folderResult.FolderPath)$($file.Path)"
-                IsoPath = "$($folderResult.FolderPath)$($file.Path)"
-            }
-        }
-    }
-}
-
+# ISO handling
 $tbISO.DisplayMemberPath = "Name"
 $script:selectedIso = $null
-$tbISO.Add_SelectionChanged({
-    $script:selectedIso = $tbISO.SelectedItem
-})
+$tbISO.Add_SelectionChanged({ $script:selectedIso = $tbISO.SelectedItem })
 
 $btnFetchISO.Add_Click({
     $btnFetchISO.IsEnabled = $false
     $tbISO.Items.Clear()
     try {
-        $datastoresToSearch = @(Get-Datastore -ErrorAction Stop | Sort-Object Name)
-        if ($datastoresToSearch.Count -eq 0) {
-            throw "No vSphere datastores are available to search."
-        }
+        if ($null -eq $tblHost.SelectedItem) { throw "Select an ESXi host first." }
+        $datastoresToSearch = @(Get-Datastore -RelatedObject $tblHost.SelectedItem.VMHost -ErrorAction Stop |
+                                Where-Object { $_.Accessible } | Sort-Object Name)
+        if ($datastoresToSearch.Count -eq 0) { throw "No accessible datastores are available on the selected host." }
 
         $isoSearchFailures = @()
         $isoCount = 0
@@ -336,16 +418,13 @@ $btnFetchISO.Add_Click({
             $isoDatastore = $datastoresToSearch[$datastoreIndex]
             $progress = [math]::Round((($datastoreIndex / $datastoresToSearch.Count) * 100), 0)
             & $updateDeploymentProgress $progress "Searching datastore $($datastoreIndex + 1) of $($datastoresToSearch.Count): $($isoDatastore.Name)"
-
             try {
                 foreach ($isoFile in (Get-DatastoreIso -Datastore $isoDatastore -ErrorAction Stop)) {
                     [void]$tbISO.Items.Add($isoFile)
                     $isoCount++
                 }
             }
-            catch {
-                $isoSearchFailures += "$($isoDatastore.Name): $($_.Exception.Message)"
-            }
+            catch { $isoSearchFailures += "$($isoDatastore.Name): $($_.Exception.Message)" }
         }
 
         $tbISO.SelectedIndex = -1
@@ -353,127 +432,37 @@ $btnFetchISO.Add_Click({
 
         if ($isoSearchFailures.Count -gt 0) {
             $failureDetails = $isoSearchFailures -join [Environment]::NewLine
-            [System.Windows.MessageBox]::Show(
-                "ISO search found $isoCount file(s), but could not search some datastores:`n$failureDetails",
-                "ISO search incomplete",
-                [System.Windows.MessageBoxButton]::OK,
-                [System.Windows.MessageBoxImage]::Warning
-            ) | Out-Null
+            Show-Box "ISO search found $isoCount file(s), but could not search some datastores:`n$failureDetails" "ISO search incomplete" ([System.Windows.MessageBoxButton]::OK) ([System.Windows.MessageBoxImage]::Warning) | Out-Null
         }
     }
     catch {
         & $updateDeploymentProgress 0 "ISO search failed."
-        [System.Windows.MessageBox]::Show(
-            $_.Exception.Message,
-            "ISO search failed",
-            [System.Windows.MessageBoxButton]::OK,
-            [System.Windows.MessageBoxImage]::Error
-        ) | Out-Null
+        Show-Box $_.Exception.Message "ISO search failed" ([System.Windows.MessageBoxButton]::OK) ([System.Windows.MessageBoxImage]::Error) | Out-Null
     }
-    finally {
-        $btnFetchISO.IsEnabled = $true
-    }
+    finally { $btnFetchISO.IsEnabled = $true }
 })
+#endregion
 
-# Guest OS identifiers used by vSphere when creating the VM.
-$guestIdBySelection = @{
-    "Windows|Windows 10" = "windows9_64Guest"
-    "Windows|Windows 11" = "windows11_64Guest"
-    "Windows|Windows 2016" = "windows2016srv_64Guest"
-    "Windows|Windows 2019" = "windows2019srv_64Guest"
-    "Windows|Windows 2022" = "windows2022srv_64Guest"
-    "Windows|Windows 2025" = "windows2025srv_64Guest"
-    "Linux|Ubuntu 20" = "ubuntu64Guest"
-    "Linux|Ubuntu 21" = "ubuntu64Guest"
-    "Linux|Ubuntu 22" = "ubuntu64Guest"
-    "Linux|Debian 10" = "debian10_64Guest"
-    "Linux|Debian 11" = "debian11_64Guest"
-    "Linux|Debian 12" = "debian12_64Guest"
-    "Linux|Debian 15" = "otherLinux64Guest"
-    "Linux|Suse 15" = "sles15_64Guest"
-    "Linux|OpenSuse Leap 42" = "opensuse64Guest"
-    "Linux|OpenSuse Leap 15" = "opensuseLeap15_64Guest"
-    "Linux|Red Hat 7" = "rhel7_64Guest"
-    "Linux|Red Hat 8" = "rhel8_64Guest"
-    "Linux|Red Hat 9" = "rhel9_64Guest"
-    "Linux|Cent OS 7" = "centos7_64Guest"
-    "Linux|Cent OS 8" = "centos8_64Guest"
-    "Linux|Cent OS 9 Stream" = "centosStream9_64Guest"
-    "Linux|Oracle Linux 7" = "oracleLinux7_64Guest"
-    "Linux|Oracle Linux 8" = "oracleLinux8_64Guest"
-    "Linux|Oracle Linux 9" = "oracleLinux9_64Guest"
-    "Linux|Fedora 36" = "fedora64Guest"
-    "Linux|Fedora 37" = "fedora64Guest"
-    "Linux|Fedora 38" = "fedora64Guest"
-}
-$guestIdFallbacksBySelection = @{
-    "Windows|Windows 10" = @(
-        "windows9_64Guest",
-        "windows8_1_64Guest",
-        "windows8_64Guest"
-    )
-    "Windows|Windows 11" = @(
-        "windows10_64Guest",
-        "windows9_64Guest",
-        "windows8_1_64Guest"
-    )
-    "Windows|Windows 2016" = @(
-        "windows2019srv_64Guest",
-        "windows2012srv_64Guest",
-        "windows9_64Guest",
-        "windows8srv_64Guest"
-    )
-    "Windows|Windows 2019" = @(
-        "windows2016srv_64Guest",
-        "windows2012srv_64Guest",
-        "windows9_64Guest"
-    )
-    "Windows|Windows 2022" = @(
-        "windows2019srv_64Guest",
-        "windows2016srv_64Guest",
-        "windows9_64Guest"
-    )
-    "Windows|Windows 2025" = @(
-        "windows2022srv_64Guest",
-        "windows2019srv_64Guest",
-        "windows2016srv_64Guest",
-        "windows9_64Guest"
-    )
-}
-
-$updateDeploymentProgress = {
-    param(
-        [double]$Percent,
-        [string]$Status,
-        [object]$ProgressBar = $pbDeployment,
-        [object]$StatusText = $txtDeploymentStatus,
-        [object]$ProgressWindow = $myForm
-    )
-
-    $ProgressBar.IsIndeterminate = $false
-    $ProgressBar.Value = $Percent
-    $StatusText.Text = $Status
-    $ProgressWindow.Dispatcher.Invoke(
-        [Action] { $ProgressWindow.UpdateLayout() },
-        [Windows.Threading.DispatcherPriority]::Background
-    )
-}
-
+#region Deployment
 $btnDiskDeploy.Add_Click({
     $createdVM = $null
+    $warnings = @()
     $btnDiskDeploy.IsEnabled = $false
+    $dp = @($pbDiskDeployment, $txtDiskDeploymentStatus, $diskConfigWindow)
     try {
-        & $updateDeploymentProgress 5 "Validating selections..." $pbDiskDeployment $txtDiskDeploymentStatus $diskConfigWindow
-        $vmName = $tbVMName.Text.Trim()
-        $folder = $tbVMfolder.SelectedItem
-        $osType = [string]$tblOS.SelectedItem
-        $osVersion = [string]$tblOSVersion.SelectedItem
-        $datastore = $tblDatastore.SelectedItem
+        & $updateDeploymentProgress 5 "Validating selections..." @dp
+        $vmName     = $tbVMName.Text.Trim()
+        $folderItem = $tbVMfolder.SelectedItem
+        $folder     = if ($null -ne $folderItem) { $folderItem.Folder } else { $null }
+        $osType     = [string]$tblOS.SelectedItem
+        $osVersion  = [string]$tblOSVersion.SelectedItem
+        $datastore  = $tblDatastore.SelectedItem
         $hostOption = $tblHost.SelectedItem
-        $guestKey = "$osType|$osVersion"
+        $guestKey   = "$osType|$osVersion"
 
-        if ([string]::IsNullOrWhiteSpace($vmName)) {
-            throw "Enter a VM name."
+        if ([string]::IsNullOrWhiteSpace($vmName)) { throw "Enter a VM name." }
+        if ($vmName.Length -gt 80 -or $vmName -match '[\\/:*?"<>|%&]') {
+            throw "The VM name is longer than 80 characters or contains invalid characters."
         }
         if ($null -eq $folder -or $null -eq $datastore -or $null -eq $hostOption) {
             throw "Select a VM folder, connected ESXi host, and datastore."
@@ -481,88 +470,68 @@ $btnDiskDeploy.Add_Click({
         if (-not $guestIdBySelection.ContainsKey($guestKey)) {
             throw "The selected operating system and version are not supported."
         }
+        if (Get-VM -Name $vmName -ErrorAction SilentlyContinue) {
+            throw "A VM named '$vmName' already exists in this inventory."
+        }
 
         $requestedGuestId = $guestIdBySelection[$guestKey]
-        & $updateDeploymentProgress 15 "Checking ESXi guest support..." $pbDiskDeployment $txtDiskDeploymentStatus $diskConfigWindow
+        & $updateDeploymentProgress 15 "Checking ESXi guest support..." @dp
         $computeResource = Get-View -Id $hostOption.VMHost.ExtensionData.Parent -Property EnvironmentBrowser -ErrorAction Stop
         if ($null -eq $computeResource.EnvironmentBrowser) {
             throw "Could not find the selected ESXi host's VM environment browser."
         }
         $environmentBrowser = Get-View -Id $computeResource.EnvironmentBrowser -ErrorAction Stop
         $defaultConfigOption = $environmentBrowser.QueryConfigOptionDescriptor() |
-            Where-Object { $_.DefaultConfigOption } |
-            Select-Object -First 1
+            Where-Object { $_.DefaultConfigOption } | Select-Object -First 1
         if ($null -eq $defaultConfigOption) {
             throw "Could not determine the selected ESXi host's supported VM hardware configuration."
         }
-
-        $vmConfigOption = $environmentBrowser.QueryConfigOption(
-            $defaultConfigOption.Key,
-            $hostOption.VMHost.ExtensionData.MoRef
-        )
+        $vmConfigOption = $environmentBrowser.QueryConfigOption($defaultConfigOption.Key, $hostOption.VMHost.ExtensionData.MoRef)
         $guestDescriptors = @($vmConfigOption.GuestOSDescriptor)
         $selectedGuestId = $requestedGuestId
-        $selectedGuestDescriptor = $guestDescriptors |
-            Where-Object { $_.Id -eq $requestedGuestId } |
-            Select-Object -First 1
+        $selectedGuestDescriptor = $guestDescriptors | Where-Object { $_.Id -eq $requestedGuestId } | Select-Object -First 1
 
         if ($null -eq $selectedGuestDescriptor) {
-            $fallbackGuestIds = @($guestIdFallbacksBySelection[$guestKey])
+            $fallbackGuestIds = @()
+            if ($guestIdFallbacksBySelection.ContainsKey($guestKey)) { $fallbackGuestIds += $guestIdFallbacksBySelection[$guestKey] }
+            if ($osType -eq "Linux") { $fallbackGuestIds += $linuxGenericFallbacks }
+
             $fallbackDescriptor = $null
             foreach ($fallbackGuestId in $fallbackGuestIds) {
-                $fallbackDescriptor = $guestDescriptors |
-                    Where-Object { $_.Id -eq $fallbackGuestId } |
-                    Select-Object -First 1
-                if ($null -ne $fallbackDescriptor) {
-                    break
-                }
+                $fallbackDescriptor = $guestDescriptors | Where-Object { $_.Id -eq $fallbackGuestId } | Select-Object -First 1
+                if ($null -ne $fallbackDescriptor) { break }
             }
 
             if ($null -eq $fallbackDescriptor) {
-                $supportedWindowsProfiles = @(
-                    $guestDescriptors |
-                        Where-Object { $_.Id -match 'windows|win' } |
-                        ForEach-Object { $_.Id } |
-                        Sort-Object -Unique
-                )
-                if ($supportedWindowsProfiles.Count -eq 0) {
-                    $supportedWindowsProfiles = @("No Windows guest profiles were returned by the selected ESXi host.")
-                }
-                throw "The selected ESXi host does not support guest profile '$requestedGuestId'. No configured compatible fallback profile was found. Windows profiles reported by the host: $($supportedWindowsProfiles -join ', ')."
+                $pattern = if ($osType -eq "Windows") { 'windows|win' } else { 'linux|ubuntu|debian|rhel|centos|sles|suse|oracle|fedora' }
+                $supportedProfiles = @($guestDescriptors | Where-Object { $_.Id -match $pattern } | ForEach-Object { $_.Id } | Sort-Object -Unique)
+                if ($supportedProfiles.Count -eq 0) { $supportedProfiles = @("No matching guest profiles were returned by the selected ESXi host.") }
+                throw "The selected ESXi host does not support guest profile '$requestedGuestId'. No compatible fallback profile was found. $osType profiles reported by the host: $($supportedProfiles -join ', ')."
             }
 
             $fallbackName = $fallbackDescriptor.FullName
-            if ([string]::IsNullOrWhiteSpace($fallbackName)) {
-                $fallbackName = $fallbackDescriptor.Id
-            }
-            $fallbackChoice = [System.Windows.MessageBox]::Show(
-                "The selected ESXi host does not support the '$osVersion' guest profile. Use '$fallbackName' instead? The VM will remain powered off.",
-                "Guest profile not supported",
-                [System.Windows.MessageBoxButton]::YesNo,
-                [System.Windows.MessageBoxImage]::Warning
-            )
+            if ([string]::IsNullOrWhiteSpace($fallbackName)) { $fallbackName = $fallbackDescriptor.Id }
+            $fallbackChoice = Show-Box "The selected ESXi host does not support the '$osVersion' guest profile. Use '$fallbackName' instead? The VM will remain powered off." "Guest profile not supported" ([System.Windows.MessageBoxButton]::YesNo) ([System.Windows.MessageBoxImage]::Warning)
             if ($fallbackChoice -ne [System.Windows.MessageBoxResult]::Yes) {
-                & $updateDeploymentProgress 0 "Deployment cancelled." $pbDiskDeployment $txtDiskDeploymentStatus $diskConfigWindow
+                & $updateDeploymentProgress 0 "Deployment cancelled." @dp
                 return
             }
             $selectedGuestId = $fallbackDescriptor.Id
             $selectedGuestDescriptor = $fallbackDescriptor
         }
         $selectedGuestProfileName = $selectedGuestDescriptor.FullName
-        if ([string]::IsNullOrWhiteSpace($selectedGuestProfileName)) {
-            $selectedGuestProfileName = $selectedGuestDescriptor.Id
-        }
+        if ([string]::IsNullOrWhiteSpace($selectedGuestProfileName)) { $selectedGuestProfileName = $selectedGuestDescriptor.Id }
 
-        $socketCount = [int]$tbCpu.SelectedItem
+        $socketCount    = [int]$tbCpu.SelectedItem
         $coresPerSocket = [int]$tbCore.SelectedItem
-        if ($socketCount -lt 1 -or $coresPerSocket -lt 1) {
-            throw "Select a positive number of sockets and cores per socket."
-        }
+        if ($socketCount -lt 1 -or $coresPerSocket -lt 1) { throw "Select a positive number of sockets and cores per socket." }
         $totalCpuCount = $socketCount * $coresPerSocket
-
-        if ($null -eq $tbMemory.SelectedItem) {
-            throw "Select the amount of memory in GB."
+        $hostThreads = [int]$hostOption.VMHost.ExtensionData.Hardware.CpuInfo.NumCpuThreads
+        if ($hostThreads -gt 0 -and $totalCpuCount -gt $hostThreads) {
+            throw "Requested $totalCpuCount vCPUs exceeds the host's $hostThreads logical processors."
         }
+
+        if ($null -eq $tbMemory.SelectedItem) { throw "Select the amount of memory in GB." }
         $memoryGB = [int]$tbMemory.SelectedItem
 
         $diskSizesGB = @()
@@ -574,61 +543,78 @@ $btnDiskDeploy.Add_Click({
             }
             $diskSizesGB += $diskSizeGB
         }
-        if ($diskSizesGB.Count -eq 0) {
-            throw "Set the disk count and enter a capacity for every disk."
-        }
+        if ($diskSizesGB.Count -eq 0) { throw "Set the disk count and enter a capacity for every disk." }
+        if ($diskSizesGB.Count -gt $maxDisks) { throw "A maximum of $maxDisks disks is supported." }
+
         $diskStorageFormat = switch ($cbDiskType.SelectedItem) {
-            "Thin" { "Thin" }
+            "Thin"                { "Thin" }
             "Thick (lazy zeroed)" { "Thick" }
-            default { throw "Select a valid VMware disk provisioning type." }
+            default               { throw "Select a valid VMware disk provisioning type." }
         }
         $selectedIso = $script:selectedIso
         if ($null -ne $selectedIso -and [string]::IsNullOrWhiteSpace($selectedIso.IsoPath)) {
             throw "The selected ISO does not have a valid vSphere datastore path. Fetch the ISO list again and select an image."
         }
 
-        & $updateDeploymentProgress 35 "Preparing VM configuration..." $pbDiskDeployment $txtDiskDeploymentStatus $diskConfigWindow
+        & $updateDeploymentProgress 35 "Preparing VM configuration..." @dp
         $newVMParams = @{
-            Name = $vmName
-            VMHost = $hostOption.VMHost
-            Datastore = $datastore
-            Location = $folder
-            GuestId = $selectedGuestId
-            NumCpu = $totalCpuCount
-            MemoryGB = $memoryGB
-            DiskGB = $diskSizesGB[0]
+            Name              = $vmName
+            VMHost            = $hostOption.VMHost
+            Datastore         = $datastore
+            Location          = $folder
+            GuestId           = $selectedGuestId
+            NumCpu            = $totalCpuCount
+            MemoryGB          = $memoryGB
+            DiskGB            = $diskSizesGB[0]
             DiskStorageFormat = $diskStorageFormat
-            ErrorAction = "Stop"
+            ErrorAction       = "Stop"
         }
-        & $updateDeploymentProgress 45 "Creating powered-off VM..." $pbDiskDeployment $txtDiskDeploymentStatus $diskConfigWindow
+        & $updateDeploymentProgress 45 "Creating powered-off VM..." @dp
         $createdVM = New-VM @newVMParams
-        & $updateDeploymentProgress 70 "Applying CPU configuration..." $pbDiskDeployment $txtDiskDeploymentStatus $diskConfigWindow
+
+        # Windows 11 / Server 2025: UEFI + Secure Boot (and vTPM for Windows 11)
+        if ($osVersion -in @("Windows 11", "Windows 2025")) {
+            & $updateDeploymentProgress 55 "Configuring UEFI and Secure Boot..." @dp
+            $bootSpec = New-Object VMware.Vim.VirtualMachineConfigSpec
+            $bootSpec.Firmware = "efi"
+            $bootSpec.BootOptions = New-Object VMware.Vim.VirtualMachineBootOptions
+            $bootSpec.BootOptions.EfiSecureBootEnabled = $true
+            (Get-View -Id $createdVM.Id -ErrorAction Stop).ReconfigVM($bootSpec)
+
+            if ($osVersion -eq "Windows 11") {
+                if (Get-Command New-VTpm -ErrorAction SilentlyContinue) {
+                    try { New-VTpm -VM $createdVM -ErrorAction Stop | Out-Null }
+                    catch { $warnings += "vTPM could not be added (a key provider must be configured): $($_.Exception.Message)" }
+                }
+                else { $warnings += "New-VTpm is not available in this PowerCLI install; add a vTPM manually before installing Windows 11." }
+            }
+        }
+
+        & $updateDeploymentProgress 65 "Applying CPU configuration..." @dp
         Set-VM -VM $createdVM -CoresPerSocket $coresPerSocket -Confirm:$false -ErrorAction Stop | Out-Null
 
         for ($diskIndex = 1; $diskIndex -lt $diskSizesGB.Count; $diskIndex++) {
             $progress = 70 + [math]::Round((($diskIndex / $diskSizesGB.Count) * 25), 0)
-            & $updateDeploymentProgress $progress "Adding disk $($diskIndex + 1) of $($diskSizesGB.Count)..." $pbDiskDeployment $txtDiskDeploymentStatus $diskConfigWindow
+            & $updateDeploymentProgress $progress "Adding disk $($diskIndex + 1) of $($diskSizesGB.Count)..." @dp
             New-HardDisk -VM $createdVM -Datastore $datastore -CapacityGB $diskSizesGB[$diskIndex] -StorageFormat $diskStorageFormat -ErrorAction Stop | Out-Null
         }
 
         $cdDrive = Get-CDDrive -VM $createdVM -ErrorAction Stop | Select-Object -First 1
         if ($null -eq $cdDrive) {
             if ($null -ne $selectedIso) {
-                & $updateDeploymentProgress 96 "Adding CD/DVD drive and configuring selected ISO..." $pbDiskDeployment $txtDiskDeploymentStatus $diskConfigWindow
+                & $updateDeploymentProgress 96 "Adding CD/DVD drive and configuring selected ISO..." @dp
                 New-CDDrive -VM $createdVM -IsoPath $selectedIso.IsoPath -StartConnected -ErrorAction Stop | Out-Null
             }
             else {
-                & $updateDeploymentProgress 96 "Adding CD/DVD drive..." $pbDiskDeployment $txtDiskDeploymentStatus $diskConfigWindow
+                & $updateDeploymentProgress 96 "Adding CD/DVD drive..." @dp
                 New-CDDrive -VM $createdVM -ErrorAction Stop | Out-Null
             }
             $cdDrive = Get-CDDrive -VM $createdVM -ErrorAction Stop | Select-Object -First 1
         }
-        if ($null -eq $cdDrive) {
-            throw "A CD/DVD drive could not be added to VM '$vmName'."
-        }
+        if ($null -eq $cdDrive) { throw "A CD/DVD drive could not be added to VM '$vmName'." }
 
         if ($null -ne $selectedIso) {
-            & $updateDeploymentProgress 96 "Configuring selected ISO to connect at power-on..." $pbDiskDeployment $txtDiskDeploymentStatus $diskConfigWindow
+            & $updateDeploymentProgress 97 "Configuring selected ISO to connect at power-on..." @dp
             Set-CDDrive -CD $cdDrive -IsoPath $selectedIso.IsoPath -StartConnected:$true -Confirm:$false -ErrorAction Stop | Out-Null
             $expectedIsoPath = ([string]$selectedIso.IsoPath).Trim().Replace("/", "\")
             $vmConfigView = Get-View -Id $createdVM.Id -Property Config.Hardware.Device -ErrorAction Stop
@@ -638,19 +624,15 @@ $btnDiskDeploy.Add_Click({
                     $_.Backing -is [VMware.Vim.VirtualCdromIsoBackingInfo] -and
                     ([string]$_.Backing.FileName).Trim().Replace("/", "\") -ieq $expectedIsoPath -and
                     $_.Connectable.StartConnected -eq $true
-                } |
-                Select-Object -First 1
+                } | Select-Object -First 1
             if ($null -eq $configuredCDDrive) {
                 $cdDriveState = @($vmConfigView.Config.Hardware.Device |
                     Where-Object { $_ -is [VMware.Vim.VirtualCdrom] } |
                     ForEach-Object {
                         $backingPath = $null
-                        if ($_.Backing -is [VMware.Vim.VirtualCdromIsoBackingInfo]) {
-                            $backingPath = $_.Backing.FileName
-                        }
+                        if ($_.Backing -is [VMware.Vim.VirtualCdromIsoBackingInfo]) { $backingPath = $_.Backing.FileName }
                         "ISO='$backingPath', StartConnected=$($_.Connectable.StartConnected), Connected=$($_.Connectable.Connected)"
-                    }
-                ) -join "; "
+                    }) -join "; "
                 throw "The CD/DVD drive was not saved with ISO '$($selectedIso.Name)' attached and set to connect at power-on. Current CD/DVD configuration: $cdDriveState"
             }
         }
@@ -668,33 +650,72 @@ $btnDiskDeploy.Add_Click({
         if ($null -ne $selectedIso) {
             $isoMessage = " ISO '$($selectedIso.Name)' is mounted and configured to connect when the VM is powered on."
         }
-        & $updateDeploymentProgress 100 "Deployment complete." $pbDiskDeployment $txtDiskDeploymentStatus $diskConfigWindow
-        $btnDiskDeploy.IsEnabled = $false
-        [System.Windows.MessageBox]::Show(
-            "VM '$vmName' was created on '$($hostOption.Name)' using datastore '$($datastore.Name)' with $socketCount socket(s), $totalCpuCount vCPU(s), and $($diskSizesGB.Count) $diskStorageFormat disk(s). It is powered off.$isoMessage$guestProfileMessage",
-            "VM deployment complete",
-            [System.Windows.MessageBoxButton]::OK,
-            [System.Windows.MessageBoxImage]::Information
-        ) | Out-Null
+        $warningMessage = ""
+        if ($warnings.Count -gt 0) { $warningMessage = "`n`nWarnings:`n- " + ($warnings -join "`n- ") }
+
+        & $updateDeploymentProgress 100 "Deployment complete." @dp
+        Show-Box "VM '$vmName' was created on '$($hostOption.Name)' using datastore '$($datastore.Name)' with $socketCount socket(s), $totalCpuCount vCPU(s), and $($diskSizesGB.Count) $diskStorageFormat disk(s). It is powered off.$isoMessage$guestProfileMessage$warningMessage" "VM deployment complete" ([System.Windows.MessageBoxButton]::OK) ([System.Windows.MessageBoxImage]::Information) | Out-Null
     }
     catch {
         $txtDiskDeploymentStatus.Text = "Deployment failed."
+        $pbDiskDeployment.Value = 0
         $message = $_.Exception.Message
         if ($null -ne $createdVM) {
-            $message = "VM '$($createdVM.Name)' was created, but a later configuration step failed: $message"
+            $answer = Show-Box "VM '$($createdVM.Name)' was created, but a later step failed:`n`n$message`n`nDelete the partially configured VM?" "VM deployment failed" ([System.Windows.MessageBoxButton]::YesNo) ([System.Windows.MessageBoxImage]::Error)
+            if ($answer -eq [System.Windows.MessageBoxResult]::Yes) {
+                try {
+                    Remove-VM -VM $createdVM -DeletePermanently -Confirm:$false -ErrorAction Stop
+                    $createdVM = $null
+                    $txtDiskDeploymentStatus.Text = "Partial VM removed. Ready."
+                }
+                catch {
+                    Show-Box "Cleanup failed: $($_.Exception.Message)" "Cleanup failed" ([System.Windows.MessageBoxButton]::OK) ([System.Windows.MessageBoxImage]::Error) | Out-Null
+                }
+            }
         }
-        [System.Windows.MessageBox]::Show(
-            $message,
-            "VM deployment failed",
-            [System.Windows.MessageBoxButton]::OK,
-            [System.Windows.MessageBoxImage]::Error
-        ) | Out-Null
+        else {
+            Show-Box $message "VM deployment failed" ([System.Windows.MessageBoxButton]::OK) ([System.Windows.MessageBoxImage]::Error) | Out-Null
+        }
     }
     finally {
-        if ($null -eq $createdVM) {
-            $btnDiskDeploy.IsEnabled = $true
-        }
+        # Re-enable only if no VM remains (failed before creation, or the partial VM was deleted).
+        if ($null -eq $createdVM) { $btnDiskDeploy.IsEnabled = $true }
     }
 })
+#endregion
 
-$myForm.ShowDialog()
+$myForm.ShowDialog() | Out-Null
+
+
+#What changed
+#Bugs fixed
+#- Back/Next: Back now calls Hide(), so the disk window can be reopened. The Closing handler only acts on a visible window, so closing the main form while the disk window is hidden no longer throws.
+#- Guest IDs: Server 2016 uses windows9Server64Guest, 2022 uses windows2019srvNext_64Guest, and 2025 uses windows2022srvNext_64Guest. CentOS Stream 9 uses centos9_64Guest, and openSUSE Leap 15 uses opensuse64Guest.
+#- Removed ID: I removed windows10_64Guest from the Windows 11 fallbacks because it isn't a valid vSphere identifier. Windows 10 is windows9_64Guest.
+#- Linux fallbacks: Linux now falls back to the generic other5x/4x/3x/otherLinux64Guest profiles, and the error message lists profiles for the right OS.
+#- Host names: IP-addressed hosts are no longer truncated to the first octet.
+#- Icon: $iconPath is now actually used, and the image is dropped if the file is missing.
+
+#Deployment hardening
+#- Datastores and ISOs: The datastore list, and the ISO search, are limited to datastores accessible from the selected host. Changing the host refreshes both lists.
+#- Pre-flight checks: Checks cover VM name length and characters, duplicate VM names, vCPU count against host logical processors, and a limit of 15 disks.
+#- UEFI and TPM: Windows 11 and Server 2025 get UEFI and Secure Boot. Windows 11 also tries to add a vTPM. If the vTPM can't be added (no key provider, or no New-VTpm), that is reported as a warning instead of failing the deployment.
+#- Cleanup: A failed deployment offers to delete the partial VM, and the Deploy button is re-enabled after a successful cleanup.
+
+#Changes from my earlier review
+#- Firmware is set with the string "efi", which is what VirtualMachineConfigSpec.Firmware expects.
+#- The vCPU check uses ExtensionData.Hardware.CpuInfo.NumCpuThreads, because VMHost.NumCpu isn't a reliable logical-processor count.
+
+#UI polish
+#- Startup: The script checks the PowerCLI module and vCenter connection at startup.
+#- Validation: The Next button validates the main form before the disk window opens.
+#- Dragging: The borderless window can be dragged.
+#- Disk sizes: Sizes you've typed are kept when you change the disk count.
+#- Progress bar: It repaints at Render priority.
+#- Folders and ISOs: The folder list shows full paths, and ISO entries no longer repeat the datastore name.
+#- Output: The final ShowDialog() output is suppressed.
+
+#Remaining caveats
+#- Guest OS availability depends on your ESXi version. Windows 11, Server 2022 and Server 2025 need recent ESXi builds, and the fallback prompt handles older hosts.
+#- ISO scanning and VM creation still run on the UI thread, so the window can look unresponsive during long operations. A background runspace would fix that, but it is a larger rewrite.
+#- There is no network adapter selector. Add -NetworkName to New-VM if your default port group isn't what you want.
