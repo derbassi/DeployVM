@@ -154,6 +154,9 @@ else {
         $script:viServersToDisconnect = @(Connect-VIServer -Server $viServer -ErrorAction Stop)
     }
     catch {
+        if ($_.Exception.Message -match '(?i)(Could not determine user name and/or password|credential request.*cancel|cancel(?:led|ed).*credential request|cancel(?:led|ed) by user)') {
+            return
+        }
         [System.Windows.MessageBox]::Show("Could not connect to '$viServer': $($_.Exception.Message)",
             "Connection failed", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error) | Out-Null
         return
