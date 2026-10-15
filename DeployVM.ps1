@@ -9,6 +9,7 @@
 
 .NOTES
     Author  : Badrane DERBAZI
+    Email   : derbassi@gmail.com
     Version : 2.0.0
     Date    : 2026-10-15
 #>
