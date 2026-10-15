@@ -1,9 +1,7 @@
-﻿Here is the complete corrected script. Everything in the review is applied, with a few adjustments I made while rewriting it (listed after the script).
-
-Add-Type -AssemblyName PresentationFramework, System.Drawing, System.Windows.Forms, WindowsFormsIntegration
+﻿Add-Type -AssemblyName PresentationFramework, System.Drawing, System.Windows.Forms, WindowsFormsIntegration
 
 #region Variables
-$iconPath    = "C:\gitHub\DeployVM\DeployVM.png"
+$iconPath    = "E:\powershell scripts\DeployVM\DeployVM.png"  # Change this to the path of your icon file
 $windowsList = @("Windows 10", "Windows 11", "Windows 2016", "Windows 2019", "Windows 2022", "Windows 2025")
 $linuxList   = @("Ubuntu 20", "Ubuntu 21", "Ubuntu 22", "Debian 10", "Debian 11", "Debian 12", "Debian 15", "Suse 15", "OpenSuse Leap 42", "OpenSuse Leap 15", "Red Hat 7", "Red Hat 8", "Red Hat 9", "Cent OS 7", "Cent OS 8", "Cent OS 9 Stream", "Oracle Linux 7", "Oracle Linux 8", "Oracle Linux 9", "Fedora 36", "Fedora 37", "Fedora 38")
 $maxDisks    = 15   # one SCSI controller = 15 usable slots
@@ -90,7 +88,7 @@ Name="VMDeploy" Title="VM Deploy" Height="432" Width="464" WindowStartupLocation
         <TextBlock Name="lblVMfolder" HorizontalAlignment="Left" Margin="26,165,0,0" TextWrapping="Wrap" Text="Folder &gt;&gt;" VerticalAlignment="Top" FontFamily="Consolas" Width="60" Height="16"/>
         <ComboBox Name="tbVMfolder" Width="344" Height="22" Margin="92,161,0,0" HorizontalAlignment="Left" Grid.Column="0" Grid.Row="0" VerticalAlignment="Top" FontFamily="Consolas" />
         <TextBlock Name="lblVMName" HorizontalAlignment="Left" Margin="26,135,0,0" TextWrapping="Wrap" Text="Name &gt;&gt;" VerticalAlignment="Top" FontFamily="Consolas" Width="60" Height="16"/>
-        <TextBlock Name="lblCPU" HorizontalAlignment="Left" Margin="25,297,0,0" TextWrapping="NoWrap" Text="Sockets:" VerticalAlignment="Top" Height="16" Width="52" FontFamily="Consolas"/>
+        <TextBlock Name="lblCPU" HorizontalAlignment="Left" Margin="25,297,0,0" TextWrapping="NoWrap" Text="CPU:" VerticalAlignment="Top" Height="16" Width="52" FontFamily="Consolas"/>
         <TextBlock Name="lblCore" HorizontalAlignment="Left" Margin="145,297,0,0" TextWrapping="NoWrap" Text="Cores/socket:" VerticalAlignment="Top" Width="94" Height="16" FontFamily="Consolas"/>
         <TextBlock Name="lblMemory" HorizontalAlignment="Left" Margin="309,297,0,0" TextWrapping="NoWrap" Text="RAM (GB):" VerticalAlignment="Top" Width="58" Height="16" FontFamily="Consolas"/>
         <TextBlock Name="lblOS" Margin="26,196,0,0" TextWrapping="Wrap" Text="Operating System &gt;&gt;" VerticalAlignment="Top" FontFamily="Consolas" Width="126" Height="16" HorizontalAlignment="Left"/>
@@ -135,7 +133,7 @@ $xaml.SelectNodes("//*[@Name]") | ForEach-Object { Set-Variable -Name ($_.Name) 
 <?xml version="1.0" encoding="utf-16"?>
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         Name="DiskConfigWindow" Title="Configure VM Disks" Height="520" Width="480"
-        WindowStartupLocation="CenterOwner" Background="#FFDFE084" ResizeMode="NoResize">
+        WindowStartupLocation="CenterOwner" Background="#FFDFE084" WindowStyle="None" ResizeMode="NoResize">
     <Grid Background="#FFB5B188" Margin="6">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
