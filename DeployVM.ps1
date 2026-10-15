@@ -68,7 +68,73 @@ $guestIdFallbacksBySelection = @{
 $linuxGenericFallbacks = @("other5xLinux64Guest", "other4xLinux64Guest", "other3xLinux64Guest", "otherLinux64Guest")
 #endregion Guest OS tables
 
+function Read-VIServerName {
+    $connectionWindow = New-Object System.Windows.Forms.Form
+    $connectionWindow.Text = "Connect to VMware"
+    $connectionWindow.ClientSize = New-Object System.Drawing.Size(380, 128)
+    $connectionWindow.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+    $connectionWindow.MaximizeBox = $false
+    $connectionWindow.MinimizeBox = $false
+    $connectionWindow.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+    $connectionWindow.ShowInTaskbar = $false
+
+    $serverLabel = New-Object System.Windows.Forms.Label
+    $serverLabel.Text = "vCenter / ESXi server name or FQDN:"
+    $serverLabel.AutoSize = $true
+    $serverLabel.Location = New-Object System.Drawing.Point(12, 14)
+
+    $serverTextBox = New-Object System.Windows.Forms.TextBox
+    $serverTextBox.Location = New-Object System.Drawing.Point(15, 38)
+    $serverTextBox.Size = New-Object System.Drawing.Size(350, 23)
+    $serverTextBox.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor
+        [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+
+    $connectButton = New-Object System.Windows.Forms.Button
+    $connectButton.Text = "Connect"
+    $connectButton.Size = New-Object System.Drawing.Size(85, 27)
+    $connectButton.Location = New-Object System.Drawing.Point(190, 82)
+
+    $cancelButton = New-Object System.Windows.Forms.Button
+    $cancelButton.Text = "Cancel"
+    $cancelButton.Size = New-Object System.Drawing.Size(85, 27)
+    $cancelButton.Location = New-Object System.Drawing.Point(280, 82)
+    $cancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+
+    $connectButton.Add_Click({
+        if ([string]::IsNullOrWhiteSpace($serverTextBox.Text)) {
+            [System.Windows.Forms.MessageBox]::Show(
+                $connectionWindow,
+                "Enter a vCenter or ESXi server name.",
+                "Server required",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning
+            ) | Out-Null
+            $serverTextBox.Focus()
+            return
+        }
+        $connectionWindow.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $connectionWindow.Close()
+    })
+
+    $connectionWindow.Controls.AddRange([System.Windows.Forms.Control[]]@(
+        $serverLabel, $serverTextBox, $connectButton, $cancelButton
+    ))
+    $connectionWindow.AcceptButton = $connectButton
+    $connectionWindow.CancelButton = $cancelButton
+
+    try {
+        if ($connectionWindow.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            return $serverTextBox.Text.Trim()
+        }
+        return $null
+    }
+    finally {
+        $connectionWindow.Dispose()
+    }
+}
+
 #region PowerCLI connection
+$script:viServersToDisconnect = @()
 if (-not (Get-Module -Name VMware.VimAutomation.Core)) {
     try { Import-Module VMware.VimAutomation.Core -ErrorAction Stop }
     catch {
@@ -77,10 +143,15 @@ if (-not (Get-Module -Name VMware.VimAutomation.Core)) {
         return
     }
 }
-if (-not ($global:DefaultVIServers | Where-Object { $_.IsConnected })) {
+$connectedVIServers = @($global:DefaultVIServers | Where-Object { $_.IsConnected })
+if ($connectedVIServers.Count -gt 0) {
+    $script:viServersToDisconnect = $connectedVIServers
+}
+else {
+    $viServer = Read-VIServerName
+    if ([string]::IsNullOrWhiteSpace($viServer)) { return }
     try {
-        $viServer = Read-Host "vCenter / ESXi FQDN"
-        Connect-VIServer -Server $viServer -ErrorAction Stop | Out-Null
+        $script:viServersToDisconnect = @(Connect-VIServer -Server $viServer -ErrorAction Stop)
     }
     catch {
         [System.Windows.MessageBox]::Show("Could not connect to '$viServer': $($_.Exception.Message)",
@@ -366,6 +437,22 @@ $btnNext.Add_Click({
 })
 
 $btnClose.Add_Click({ $myForm.Close() })
+
+$myForm.Add_Closing({
+    $disconnectErrors = @()
+    foreach ($viServerConnection in $script:viServersToDisconnect) {
+        if (-not $viServerConnection.IsConnected) { continue }
+        try {
+            Disconnect-VIServer -Server $viServerConnection -Confirm:$false -ErrorAction Stop | Out-Null
+        }
+        catch {
+            $disconnectErrors += "Could not disconnect from '$($viServerConnection.Name)': $($_.Exception.Message)"
+        }
+    }
+    if ($disconnectErrors.Count -gt 0) {
+        Show-Box ($disconnectErrors -join "`n") "vCenter disconnect warning" ([System.Windows.MessageBoxButton]::OK) ([System.Windows.MessageBoxImage]::Warning) | Out-Null
+    }
+})
 
 # The main window has no title bar, so allow dragging it.
 $myForm.Add_MouseLeftButtonDown({ try { $myForm.DragMove() } catch { } })
