@@ -3,7 +3,8 @@
     Deploys a virtual machine to VMware vSphere.
 
 .DESCRIPTION
-    Provides a graphical interface for configuring and creating a powered-off
+    Connects to vSphere using credentials entered in a secure login window, then
+    provides a graphical interface for configuring and creating a powered-off
     virtual machine with the selected guest OS, compute resources, disks, and
     optional ISO installation media.
 
@@ -68,68 +69,88 @@ $guestIdFallbacksBySelection = @{
 $linuxGenericFallbacks = @("other5xLinux64Guest", "other4xLinux64Guest", "other3xLinux64Guest", "otherLinux64Guest")
 #endregion Guest OS tables
 
-function Read-VIServerName {
-    $connectionWindow = New-Object System.Windows.Forms.Form
-    $connectionWindow.Text = "Connect to VMware"
-    $connectionWindow.ClientSize = New-Object System.Drawing.Size(380, 128)
-    $connectionWindow.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
-    $connectionWindow.MaximizeBox = $false
-    $connectionWindow.MinimizeBox = $false
-    $connectionWindow.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
-    $connectionWindow.ShowInTaskbar = $false
-
-    $serverLabel = New-Object System.Windows.Forms.Label
-    $serverLabel.Text = "vCenter / ESXi server name or FQDN:"
-    $serverLabel.AutoSize = $true
-    $serverLabel.Location = New-Object System.Drawing.Point(12, 14)
-
-    $serverTextBox = New-Object System.Windows.Forms.TextBox
-    $serverTextBox.Location = New-Object System.Drawing.Point(15, 38)
-    $serverTextBox.Size = New-Object System.Drawing.Size(350, 23)
-    $serverTextBox.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor
-        [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
-
-    $connectButton = New-Object System.Windows.Forms.Button
-    $connectButton.Text = "Connect"
-    $connectButton.Size = New-Object System.Drawing.Size(85, 27)
-    $connectButton.Location = New-Object System.Drawing.Point(190, 82)
-
-    $cancelButton = New-Object System.Windows.Forms.Button
-    $cancelButton.Text = "Cancel"
-    $cancelButton.Size = New-Object System.Drawing.Size(85, 27)
-    $cancelButton.Location = New-Object System.Drawing.Point(280, 82)
-    $cancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+function Read-VIServerCredential {
+    $loginXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        Title="Connect to vSphere" Width="410" SizeToContent="Height"
+        WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
+        ShowInTaskbar="False">
+    <Grid Margin="20">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="110"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,16"
+                   FontSize="16" FontWeight="SemiBold" Text="vSphere sign in"/>
+        <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,0,10,12"
+                   VerticalAlignment="Center" Text="Server"/>
+        <TextBox Name="txtVIServer" Grid.Row="1" Grid.Column="1" Margin="0,0,0,12"
+                 MinWidth="250" Height="26" VerticalContentAlignment="Center"/>
+        <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,0,10,12"
+                   VerticalAlignment="Center" Text="Username"/>
+        <TextBox Name="txtVIUsername" Grid.Row="2" Grid.Column="1" Margin="0,0,0,12"
+                 Height="26" VerticalContentAlignment="Center"/>
+        <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,0,10,12"
+                   VerticalAlignment="Center" Text="Password"/>
+        <PasswordBox Name="pwdVIPassword" Grid.Row="3" Grid.Column="1" Margin="0,0,0,12"
+                     Height="26" VerticalContentAlignment="Center"/>
+        <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,6,0,0">
+            <Button Name="btnVICancel" Content="Cancel" IsCancel="True"
+                    Width="85" Height="28" Margin="0,0,8,0"/>
+            <Button Name="btnVIConnect" Content="Connect" IsDefault="True"
+                    Width="85" Height="28"/>
+        </StackPanel>
+    </Grid>
+</Window>
+'@
+    [xml]$loginDocument = $loginXaml
+    $loginReader = New-Object System.Xml.XmlNodeReader $loginDocument
+    $loginWindow = [Windows.Markup.XamlReader]::Load($loginReader)
+    $serverInput = $loginWindow.FindName("txtVIServer")
+    $usernameInput = $loginWindow.FindName("txtVIUsername")
+    $passwordInput = $loginWindow.FindName("pwdVIPassword")
+    $connectButton = $loginWindow.FindName("btnVIConnect")
 
     $connectButton.Add_Click({
-        if ([string]::IsNullOrWhiteSpace($serverTextBox.Text)) {
-            [System.Windows.Forms.MessageBox]::Show(
-                $connectionWindow,
-                "Enter a vCenter or ESXi server name.",
-                "Server required",
-                [System.Windows.Forms.MessageBoxButtons]::OK,
-                [System.Windows.Forms.MessageBoxIcon]::Warning
+        $enteredPassword = $passwordInput.SecurePassword
+        try { $passwordIsEmpty = $enteredPassword.Length -eq 0 }
+        finally { $enteredPassword.Dispose() }
+
+        if ([string]::IsNullOrWhiteSpace($serverInput.Text) -or
+            [string]::IsNullOrWhiteSpace($usernameInput.Text) -or
+            $passwordIsEmpty) {
+            [System.Windows.MessageBox]::Show(
+                $loginWindow,
+                "Enter the server, username, and password.",
+                "Missing login information",
+                [System.Windows.MessageBoxButton]::OK,
+                [System.Windows.MessageBoxImage]::Warning
             ) | Out-Null
-            $serverTextBox.Focus()
             return
         }
-        $connectionWindow.DialogResult = [System.Windows.Forms.DialogResult]::OK
-        $connectionWindow.Close()
+        $loginWindow.DialogResult = $true
     })
 
-    $connectionWindow.Controls.AddRange([System.Windows.Forms.Control[]]@(
-        $serverLabel, $serverTextBox, $connectButton, $cancelButton
-    ))
-    $connectionWindow.AcceptButton = $connectButton
-    $connectionWindow.CancelButton = $cancelButton
-
     try {
-        if ($connectionWindow.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-            return $serverTextBox.Text.Trim()
+        if ($loginWindow.ShowDialog() -ne $true) { return $null }
+        $securePassword = $passwordInput.SecurePassword
+        $credential = New-Object System.Management.Automation.PSCredential `
+            -ArgumentList $usernameInput.Text.Trim(), $securePassword
+        return [PSCustomObject]@{
+            Server     = $serverInput.Text.Trim()
+            Credential = $credential
         }
-        return $null
     }
     finally {
-        $connectionWindow.Dispose()
+        $passwordInput.Clear()
     }
 }
 
@@ -148,15 +169,13 @@ if ($connectedVIServers.Count -gt 0) {
     $script:viServersToDisconnect = $connectedVIServers
 }
 else {
-    $viServer = Read-VIServerName
-    if ([string]::IsNullOrWhiteSpace($viServer)) { return }
+    $login = Read-VIServerCredential
+    if ($null -eq $login) { return }
+    $viServer = $login.Server
     try {
-        $script:viServersToDisconnect = @(Connect-VIServer -Server $viServer -ErrorAction Stop)
+        $script:viServersToDisconnect = @(Connect-VIServer -Server $viServer -Credential $login.Credential -ErrorAction Stop)
     }
     catch {
-        if ($_.Exception.Message -match '(?i)(Could not determine user name and/or password|credential request.*cancel|cancel(?:led|ed).*credential request|cancel(?:led|ed) by user)') {
-            return
-        }
         [System.Windows.MessageBox]::Show("Could not connect to '$viServer': $($_.Exception.Message)",
             "Connection failed", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error) | Out-Null
         return
